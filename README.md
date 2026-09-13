@@ -197,6 +197,15 @@ def create_app():
 
 ## 4. 실행 방법
 
+0. 파이썬 버전 맞추기 (팀원마다 로컬 파이썬 버전이 다를 수 있어요)
+
+   이 프로젝트는 `.python-version` 파일로 파이썬 `3.14.5`를 사용하도록 고정되어 있습니다.
+   [pyenv](https://github.com/pyenv/pyenv) (Windows는 [pyenv-win](https://github.com/pyenv-win/pyenv-win))를 사용하면 프로젝트 디렉토리에 들어올 때 자동으로 해당 버전이 선택됩니다.
+   ```bash
+   pyenv install 3.14.5   # 아직 설치 안 했다면
+   pyenv version           # 3.14.5 가 선택됐는지 확인
+   ```
+
 1. 가상환경 생성 및 활성화
    ```bash
    python -m venv venv

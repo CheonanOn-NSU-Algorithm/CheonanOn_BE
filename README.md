@@ -212,6 +212,10 @@ def create_app():
    ```
 2. 의존성 설치
    ```bash
+   # 새로 의존성 설치할 때마다 requirements.txt 생성
+   pip freeze > requirements.txt
+   
+   # 클론 후 의존성 받아올 때 
    pip install -r requirements.txt
    ```
    > **(TODO)** `requirements.txt`가 아직 없습니다. 패키지를 설치했다면 `pip freeze > requirements.txt`로 생성해서 커밋해주세요.

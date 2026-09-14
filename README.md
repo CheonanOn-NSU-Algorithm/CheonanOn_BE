@@ -38,7 +38,7 @@
 ### 작업 순서
 
 1. `develop` 브랜치에서 최신 상태로 pull
-2. `git checkout -b feature/도메인명` (`develop` 기준으로 분기)
+2. `git checkout -b feature/도메인명-이름` (`develop` 기준으로 분기)
 3. 해당 도메인 작업 진행
 4. 작업 완료 후 `git add`, `commit`, `push`
 5. GitHub에서 `feature/도메인명` → `develop`으로 Pull Request 생성
@@ -49,3 +49,26 @@
 
 - `feature` 브랜치를 `main`에서 분기하지 않도록 주의합니다 (반드시 `develop`에서 분기).
 - `main`으로의 병합은 팀장만 진행합니다.
+
+## 3. 커밋 컨벤션
+
+커밋 메시지는 `타입: 내용` 형식으로 작성합니다.
+
+```
+feat: 카카오 로그인 API 추가
+fix: 토큰 만료 시간 계산 오류 수정
+docs: README 실행 방법 보강
+refactor: 에러 클래스 구조 정리
+```
+
+| 타입 | 의미 |
+|---|---|
+| `feat` | 새로운 기능 추가 |
+| `fix` | 버그 수정 |
+| `docs` | 문서 수정 (README, 주석 등) |
+| `refactor` | 기능 변경 없는 코드 구조 개선 |
+| `test` | 테스트 코드 추가/수정 |
+| `chore` | 빌드/설정/의존성 등 기타 작업 |
+
+- 제목은 한 줄로 간결하게, 마침표는 붙이지 않습니다.
+- 여러 작업을 한 커밋에 몰아넣지 말고, 의미 단위로 쪼개서 커밋합니다.

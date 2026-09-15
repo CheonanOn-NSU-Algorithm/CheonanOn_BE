@@ -72,3 +72,40 @@ refactor: 에러 클래스 구조 정리
 
 - 제목은 한 줄로 간결하게, 마침표는 붙이지 않습니다.
 - 여러 작업을 한 커밋에 몰아넣지 말고, 의미 단위로 쪼개서 커밋합니다.
+
+## 4. DB 마이그레이션 (Flask-Migrate)
+
+DB 스키마(테이블/컬럼) 변경은 `db.create_all()`처럼 자동으로 맞추지 않고, **Flask-Migrate(Alembic)**로 버전 관리합니다. 모델을 바꿀 때마다 변경 이력이 담긴 스크립트 파일을 만들어 git으로 공유하기 때문에, 팀원 전체가 같은 명령으로 로컬 DB를 동일한 스키마 상태로 맞출 수 있습니다.
+
+### 최초 1회 설정
+
+Flask CLI가 앱을 찾을 수 있도록 터미널에서 환경변수를 지정합니다 (`wsgi.py`에 `app = create_app()`이 있어 자동 인식됩니다).
+
+```bash
+export FLASK_APP=wsgi.py
+```
+
+### 새로 clone 했거나 pull 받은 뒤 (테이블 생성/갱신)
+
+```bash
+flask db upgrade
+```
+
+`migrations/versions/` 안의 스크립트들을 순서대로 적용해서 로컬 MySQL DB를 최신 스키마로 맞춰줍니다. 모델을 직접 만들거나 수정할 필요 없이 이 명령 한 줄이면 됩니다.
+
+### 모델을 새로 추가하거나 수정했을 때
+
+```bash
+# 1. 모델 변경 후, 변경사항을 비교해서 마이그레이션 스크립트 생성
+flask db migrate -m "feat: user 테이블에 nickname 컬럼 추가"
+
+# 2. migrations/versions/ 에 생성된 스크립트를 열어서 의도한 대로 만들어졌는지 확인
+#    (자동 생성이 완벽하지 않을 수 있어 리뷰 필수)
+
+# 3. 실제 DB에 반영
+flask db upgrade
+```
+
+- `-m` 뒤의 마이그레이션 메시지도 **커밋 컨벤션과 동일한 타입 접두어**(`feat`, `fix`, `refactor` 등)를 붙여서 작성합니다. 나중에 `migrations/versions/`만 훑어봐도 어떤 변경이 어떤 의도였는지 알 수 있게 하기 위함입니다.
+- 모델 파일과 그 모델로 생성된 마이그레이션 스크립트(`migrations/versions/*.py`)는 **같은 커밋에 함께 포함**합니다. 스크립트 없이 모델만 커밋하면 다른 팀원은 `flask db upgrade`를 해도 테이블이 생기지 않습니다.
+- `migrations/` 폴더 전체(`alembic.ini`, `env.py`, `script.py.mako`, `versions/`)는 git으로 관리되는 프로젝트 파일입니다. `.gitignore`에 추가하지 마세요.

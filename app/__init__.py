@@ -4,6 +4,10 @@ from app.config import Config  # JWT_SECRET_KEY, DB URI 등 환경설정 값을 
 
 from app.errors import ApiException  # 공통 API 예외 베이스 클래스
 from app.extensions import db, migrate, jwt  # DB/마이그레이션/JWT 확장 객체 (app에 바인딩할 예정)
+# models 패키지를 import해서 User, TokenBlocklist 등 모델 클래스들을 로드시킴.
+# 이 코드에서 직접 모델을 쓰지는 않지만, Flask-Migrate가 마이그레이션을 자동 생성할 때
+# db.Model을 상속한 클래스들이 이미 import되어 있어야 인식할 수 있기 때문에 필요하다.
+from app import models
 
 def create_app():
     app = Flask(__name__)

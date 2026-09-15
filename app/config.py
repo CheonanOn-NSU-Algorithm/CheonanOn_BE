@@ -1,7 +1,7 @@
-import os
-from datetime import timedelta
+import os                      # .env/환경변수 값을 읽어오기 위한 표준 라이브러리
+from datetime import timedelta # JWT 토큰 만료 기간을 지정하기 위해 사용
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv # .env 파일을 파싱해서 os.environ에 로드해주는 라이브러리
 
 # .env 파일 내용을 읽어서 os.environ에 등록하는 함수
 load_dotenv()

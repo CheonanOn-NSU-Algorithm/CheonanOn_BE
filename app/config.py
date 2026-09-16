@@ -11,6 +11,9 @@ class Config:
     # JWT 서명/검증에 쓰는 비밀키. .env의 JWT_SECRET_KEY 값을 그대로 사용
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
 
+    # 한국관광공사 API 키. .env의 TOURAPI_KEY 값을 그대로 사용
+    TOURAPI_KEY = os.environ.get("TOURAPI_KEY")
+
     # access token 유효기간 (짧게 유지, 만료되면 refresh token으로 재발급)
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=1)
 

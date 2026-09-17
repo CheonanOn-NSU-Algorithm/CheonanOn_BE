@@ -8,8 +8,9 @@
 # db.Model을 상속한 모델 클래스들이 파이썬 프로세스에 "import되어" 있어야 하는데,
 # app/__init__.py에서 `from app import models`로 이 파일을 import하는 것만으로
 # 아래 두 모델이 함께 로드되게 만드는 역할도 한다.
+from app.models.event import Event
 from app.models.user import User                      # User 모델을 이 패키지 네임스페이스로 노출
 from app.models.token_blocklist import TokenBlocklist  # TokenBlocklist 모델을 이 패키지 네임스페이스로 노출
 
 # `from app.models import *` 를 했을 때 노출할 이름 목록을 명시적으로 제한
-__all__ = ["User", "TokenBlocklist"]
+__all__ = ["User", "TokenBlocklist", "Event"]

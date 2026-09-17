@@ -1,5 +1,13 @@
-from app.config import Config
 import requests
+from app.config import Config
+from app.errors import (
+    TourAPIConnectionError,
+    TourAPIHTTPError,
+    TourAPIInvalidResponseError,
+    TourAPIKeyNotConfiguredError,
+    TourAPIResponseError,
+    TourAPITimeoutError,
+)
 
 
 
@@ -7,7 +15,7 @@ class TourAPI:
     def __init__(self):
         #api키 불러올 때 키 값이 없으면 에러 발생시키기
         if not Config.TOURAPI_KEY:
-            raise RuntimeError("TOURAPI_KEY가 .env에 설정되지 않았습니다.")
+            raise TourAPIKeyNotConfiguredError()
         # api 키 불러오기
         self.api_key = requests.utils.unquote(Config.TOURAPI_KEY)
         self.api_base_url = ("https://apis.data.go.kr/B551011/KorService2")
@@ -34,23 +42,67 @@ class TourAPI:
         # 추가 요구하는 파라미터가 있으면 합치기
         if params:
             request_params.update(params)
-        response = requests.get(
-            api_url,
-            params=request_params,
-            timeout=10
-        )
-        response.raise_for_status()
+        try:
+            response = requests.get(
+                api_url,
+                params=request_params,
+                timeout=10
+            )
+            response.raise_for_status()
+        except requests.exceptions.Timeout as error:
+            raise TourAPITimeoutError() from error
+        except requests.exceptions.HTTPError as error:
+            raise TourAPIHTTPError() from error
+        except requests.exceptions.RequestException as error:
+            raise TourAPIConnectionError() from error
 
-        return response.json()
+        try:
+            data = response.json()
+        except ValueError as error:
+            raise TourAPIInvalidResponseError() from error
+
+        if not isinstance(data, dict):
+            raise TourAPIInvalidResponseError()
+
+        api_response = data.get("response")
+        if not isinstance(api_response, dict):
+            raise TourAPIInvalidResponseError()
+
+        header = api_response.get("header")
+        if not isinstance(header, dict):
+            raise TourAPIInvalidResponseError()
+
+        result_code = str(header.get("resultCode", ""))
+        if result_code != "0000":
+            raise TourAPIResponseError()
+
+        return data
 
     # API 응답에서 필요한 item 데이터만 가져오기
     def get_items(self, data):
-        body = data.get("response", {}).get("body", {})
+        if not isinstance(data, dict):
+            raise TourAPIInvalidResponseError()
+
+        api_response = data.get("response")
+        if not isinstance(api_response, dict):
+            raise TourAPIInvalidResponseError()
+
+        body = api_response.get("body")
+        if not isinstance(body, dict):
+            raise TourAPIInvalidResponseError()
+
         items = body.get("items", {})
         if not items:
             return []
 
-        return items.get("item", [])
+        if not isinstance(items, dict):
+            raise TourAPIInvalidResponseError()
+
+        item_list = items.get("item", [])
+        if not isinstance(item_list, list):
+            raise TourAPIInvalidResponseError()
+
+        return item_list
 
     # 천안의 전체 관광지 조회
     def spots(self):

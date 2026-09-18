@@ -1,21 +1,13 @@
 import requests
 from app.config import Config
-from app.errors import (
-    TourAPIConnectionError,
-    TourAPIHTTPError,
-    TourAPIInvalidResponseError,
-    TourAPIKeyNotConfiguredError,
-    TourAPIResponseError,
-    TourAPITimeoutError,
-)
-
+from app.errors import TourAPIException
 
 
 class TourAPI:
     def __init__(self):
         #api키 불러올 때 키 값이 없으면 에러 발생시키기
         if not Config.TOURAPI_KEY:
-            raise TourAPIKeyNotConfiguredError()
+            raise TourAPIException("TOURAPI_KEY가 설정되지 않았습니다.")
         # api 키 불러오기
         self.api_key = requests.utils.unquote(Config.TOURAPI_KEY)
         self.api_base_url = ("https://apis.data.go.kr/B551011/KorService2")
@@ -50,57 +42,57 @@ class TourAPI:
             )
             response.raise_for_status()
         except requests.exceptions.Timeout as error:
-            raise TourAPITimeoutError() from error
+            raise TourAPIException("TourAPI 응답 시간이 초과되었습니다.") from error
         except requests.exceptions.HTTPError as error:
-            raise TourAPIHTTPError() from error
+            raise TourAPIException("TourAPI가 요청 처리에 실패했습니다.") from error
         except requests.exceptions.RequestException as error:
-            raise TourAPIConnectionError() from error
+            raise TourAPIException("TourAPI에 연결할 수 없습니다.") from error
 
         try:
             data = response.json()
         except ValueError as error:
-            raise TourAPIInvalidResponseError() from error
+            raise TourAPIException("TourAPI에서 올바르지 않은 응답을 받았습니다.") from error
 
         if not isinstance(data, dict):
-            raise TourAPIInvalidResponseError()
+            raise TourAPIException("TourAPI에서 올바르지 않은 응답을 받았습니다.")
 
         api_response = data.get("response")
         if not isinstance(api_response, dict):
-            raise TourAPIInvalidResponseError()
+            raise TourAPIException("TourAPI에서 올바르지 않은 응답을 받았습니다.")
 
         header = api_response.get("header")
         if not isinstance(header, dict):
-            raise TourAPIInvalidResponseError()
+            raise TourAPIException("TourAPI에서 올바르지 않은 응답을 받았습니다.")
 
         result_code = str(header.get("resultCode", ""))
         if result_code != "0000":
-            raise TourAPIResponseError()
+            raise TourAPIException("TourAPI 요청 결과가 실패로 반환되었습니다.")
 
         return data
 
     # API 응답에서 필요한 item 데이터만 가져오기
     def get_items(self, data):
         if not isinstance(data, dict):
-            raise TourAPIInvalidResponseError()
+            raise TourAPIException("TourAPI에서 올바르지 않은 응답을 받았습니다.")
 
         api_response = data.get("response")
         if not isinstance(api_response, dict):
-            raise TourAPIInvalidResponseError()
+            raise TourAPIException("TourAPI에서 올바르지 않은 응답을 받았습니다.")
 
         body = api_response.get("body")
         if not isinstance(body, dict):
-            raise TourAPIInvalidResponseError()
+            raise TourAPIException("TourAPI에서 올바르지 않은 응답을 받았습니다.")
 
         items = body.get("items", {})
         if not items:
             return []
 
         if not isinstance(items, dict):
-            raise TourAPIInvalidResponseError()
+            raise TourAPIException("TourAPI에서 올바르지 않은 응답을 받았습니다.")
 
         item_list = items.get("item", [])
         if not isinstance(item_list, list):
-            raise TourAPIInvalidResponseError()
+            raise TourAPIException("TourAPI에서 올바르지 않은 응답을 받았습니다.")
 
         return item_list
 

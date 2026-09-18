@@ -3,25 +3,11 @@
 
 from app.errors.base import ApiException
 from app.errors.auth import AuthException, TokenExpiredError
-from app.errors.tour_api import (
-    TourAPIConnectionError,
-    TourAPIException,
-    TourAPIHTTPError,
-    TourAPIInvalidResponseError,
-    TourAPIKeyNotConfiguredError,
-    TourAPIResponseError,
-    TourAPITimeoutError,
-)
+from app.errors.tour_api import TourAPIException
 
 __all__ = [
     "ApiException",
     "AuthException",
     "TokenExpiredError",
     "TourAPIException",
-    "TourAPIKeyNotConfiguredError",
-    "TourAPITimeoutError",
-    "TourAPIConnectionError",
-    "TourAPIHTTPError",
-    "TourAPIInvalidResponseError",
-    "TourAPIResponseError",
 ]

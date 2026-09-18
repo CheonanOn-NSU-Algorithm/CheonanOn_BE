@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import requests
 from app.config import Config
 from app.errors import TourAPIException
@@ -96,6 +98,37 @@ class TourAPI:
 
         return item_list
 
+    # 콘텐츠 타입별 천안 관광 정보 공통 조회
+    def get_contents_by_type(self, content_type_id):
+        supported_types = {12, 14}
+        if content_type_id not in supported_types:
+            raise TourAPIException("지원하지 않는 관광 콘텐츠 타입입니다.")
+
+        all_contents = []
+
+        # 동남구, 서북구 모두 조회
+        for district_name, district_code in self.cheonan_districts.items():
+            data = self.request(
+                "areaBasedList2",
+                {
+                    "numOfRows": 100,
+                    "pageNo": 1,
+                    "contentTypeId": content_type_id,
+                    "lDongRegnCd": 44,  # 충청남도
+                    "lDongSignguCd": district_code,
+                    "arrange": "A",
+                }
+            )
+            contents = self.get_items(data)
+
+            # 어느 구에서 가져온 콘텐츠인지 표시
+            for content in contents:
+                content["district"] = district_name
+
+            all_contents.extend(contents)
+
+        return all_contents
+
     # 천안의 전체 관광지 조회
     def spots(self):
         """
@@ -117,31 +150,12 @@ class TourAPI:
             title          관광지명
             district       천안시 구 이름(동남구/서북구)
         """
-        all_spots = []
+        return self.get_contents_by_type(12)
 
-        # 동남구, 서북구 모두 조회
-        for district_name, district_code in self.cheonan_districts.items():
-            data = self.request(
-                "areaBasedList2",
-                {
-                    "numOfRows": 100,
-                    "pageNo": 1,
-                    "contentTypeId": 12,
-                    "lDongRegnCd": 44,  # 충청남도
-                    "lDongSignguCd": district_code,
-                    "arrange": "A",
-                }
-            )
-            spots = self.get_items(data)
-
-            # 어느 구에서 가져온 관광지인지 표시 - 이거 나중에 DB에 저장할 때 필요없으면 제거 1순위 
-            for spot in spots:
-                spot["district"] = district_name
-
-            # 전체 관광지 목록에 추가
-            all_spots.extend(spots)
-
-        return all_spots
+    # 천안의 전체 문화시설 조회
+    def cultural_facilities(self):
+        """문화시설(contentTypeId=14) 기본정보 조회"""
+        return self.get_contents_by_type(14)
 
     # 관광지 설명 가져오는 기능 - 하나씩 불러오는거라 일일 트래픽 조심!
     def spots_report(self, spot_id):
@@ -222,8 +236,31 @@ class TourAPI:
         ) 
         return self.get_items(data)
 
+    # 축제 조회 날짜 검사 및 YYYYMMDD 형식으로 변환
+    def validate_festival_dates(self, start_date=None, end_date=None):
+        if start_date is None and end_date is None:
+            current_year = datetime.now().year
+            return f"{current_year}0101", f"{current_year}1231"
+
+        if start_date is None or end_date is None:
+            raise TourAPIException("축제 조회 시작일과 종료일을 모두 입력해주세요.")
+
+        start_date = str(start_date)
+        end_date = str(end_date)
+
+        try:
+            parsed_start_date = datetime.strptime(start_date, "%Y%m%d")
+            parsed_end_date = datetime.strptime(end_date, "%Y%m%d")
+        except ValueError as error:
+            raise TourAPIException("축제 조회 날짜는 YYYYMMDD 형식으로 입력해주세요.") from error
+
+        if parsed_start_date > parsed_end_date:
+            raise TourAPIException("축제 조회 시작일은 종료일보다 늦을 수 없습니다.")
+
+        return start_date, end_date
+
     # 축제 조회
-    def festival(self):
+    def festival(self, start_date=None, end_date=None):
         """
         천안 전체 축제 목록 조회
 
@@ -242,6 +279,7 @@ class TourAPI:
             title          축제명
             district       천안시 구 이름(동남구/서북구)
         """
+        start_date, end_date = self.validate_festival_dates(start_date, end_date)
         all_festivals = []
 
         # 동남구, 서북구 모두 조회
@@ -252,8 +290,8 @@ class TourAPI:
                 {
                     "numOfRows": 100,
                     "pageNo": 1,
-                    "eventStartDate": 20260101,
-                    "eventEndDate": 20261231,
+                    "eventStartDate": start_date,
+                    "eventEndDate": end_date,
                     "lDongRegnCd": 44,  # 충청남도
                     "lDongSignguCd": district_code,
                     "arrange": "A",

@@ -2,14 +2,14 @@ from datetime import datetime
 
 import requests
 from app.config import Config
-from app.errors import TourAPIException
+from app.errors import BusinessException, ErrorCode
 
 
 class TourAPI:
     def __init__(self):
         #api키 불러올 때 키 값이 없으면 에러 발생시키기
         if not Config.TOURAPI_KEY:
-            raise TourAPIException("TOURAPI_KEY가 설정되지 않았습니다.")
+            raise BusinessException(ErrorCode.TOUR_API_KEY_MISSING)
         # api 키 불러오기
         self.api_key = requests.utils.unquote(Config.TOURAPI_KEY)
         self.api_base_url = ("https://apis.data.go.kr/B551011/KorService2")
@@ -44,57 +44,57 @@ class TourAPI:
             )
             response.raise_for_status()
         except requests.exceptions.Timeout as error:
-            raise TourAPIException("TourAPI 응답 시간이 초과되었습니다.") from error
+            raise BusinessException(ErrorCode.TOUR_API_TIMEOUT) from error
         except requests.exceptions.HTTPError as error:
-            raise TourAPIException("TourAPI가 요청 처리에 실패했습니다.") from error
+            raise BusinessException(ErrorCode.TOUR_API_HTTP_ERROR) from error
         except requests.exceptions.RequestException as error:
-            raise TourAPIException("TourAPI에 연결할 수 없습니다.") from error
+            raise BusinessException(ErrorCode.TOUR_API_CONNECTION_ERROR) from error
 
         try:
             data = response.json()
         except ValueError as error:
-            raise TourAPIException("TourAPI에서 올바르지 않은 응답을 받았습니다.") from error
+            raise BusinessException(ErrorCode.TOUR_API_INVALID_RESPONSE) from error
 
         if not isinstance(data, dict):
-            raise TourAPIException("TourAPI에서 올바르지 않은 응답을 받았습니다.")
+            raise BusinessException(ErrorCode.TOUR_API_INVALID_RESPONSE)
 
         api_response = data.get("response")
         if not isinstance(api_response, dict):
-            raise TourAPIException("TourAPI에서 올바르지 않은 응답을 받았습니다.")
+            raise BusinessException(ErrorCode.TOUR_API_INVALID_RESPONSE)
 
         header = api_response.get("header")
         if not isinstance(header, dict):
-            raise TourAPIException("TourAPI에서 올바르지 않은 응답을 받았습니다.")
+            raise BusinessException(ErrorCode.TOUR_API_INVALID_RESPONSE)
 
         result_code = str(header.get("resultCode", ""))
         if result_code != "0000":
-            raise TourAPIException("TourAPI 요청 결과가 실패로 반환되었습니다.")
+            raise BusinessException(ErrorCode.TOUR_API_RESULT_ERROR)
 
         return data
 
     # API 응답에서 필요한 item 데이터만 가져오기
     def get_items(self, data):
         if not isinstance(data, dict):
-            raise TourAPIException("TourAPI에서 올바르지 않은 응답을 받았습니다.")
+            raise BusinessException(ErrorCode.TOUR_API_INVALID_RESPONSE)
 
         api_response = data.get("response")
         if not isinstance(api_response, dict):
-            raise TourAPIException("TourAPI에서 올바르지 않은 응답을 받았습니다.")
+            raise BusinessException(ErrorCode.TOUR_API_INVALID_RESPONSE)
 
         body = api_response.get("body")
         if not isinstance(body, dict):
-            raise TourAPIException("TourAPI에서 올바르지 않은 응답을 받았습니다.")
+            raise BusinessException(ErrorCode.TOUR_API_INVALID_RESPONSE)
 
         items = body.get("items", {})
         if not items:
             return []
 
         if not isinstance(items, dict):
-            raise TourAPIException("TourAPI에서 올바르지 않은 응답을 받았습니다.")
+            raise BusinessException(ErrorCode.TOUR_API_INVALID_RESPONSE)
 
         item_list = items.get("item", [])
         if not isinstance(item_list, list):
-            raise TourAPIException("TourAPI에서 올바르지 않은 응답을 받았습니다.")
+            raise BusinessException(ErrorCode.TOUR_API_INVALID_RESPONSE)
 
         return item_list
 
@@ -102,7 +102,7 @@ class TourAPI:
     def get_contents_by_type(self, content_type_id):
         supported_types = {12, 14}
         if content_type_id not in supported_types:
-            raise TourAPIException("지원하지 않는 관광 콘텐츠 타입입니다.")
+            raise BusinessException(ErrorCode.TOUR_INVALID_CONTENT_TYPE)
 
         all_contents = []
 
@@ -243,7 +243,7 @@ class TourAPI:
             return f"{current_year}0101", f"{current_year}1231"
 
         if start_date is None or end_date is None:
-            raise TourAPIException("축제 조회 시작일과 종료일을 모두 입력해주세요.")
+            raise BusinessException(ErrorCode.TOUR_FESTIVAL_DATES_REQUIRED)
 
         start_date = str(start_date)
         end_date = str(end_date)
@@ -252,10 +252,10 @@ class TourAPI:
             parsed_start_date = datetime.strptime(start_date, "%Y%m%d")
             parsed_end_date = datetime.strptime(end_date, "%Y%m%d")
         except ValueError as error:
-            raise TourAPIException("축제 조회 날짜는 YYYYMMDD 형식으로 입력해주세요.") from error
+            raise BusinessException(ErrorCode.TOUR_FESTIVAL_INVALID_DATE) from error
 
         if parsed_start_date > parsed_end_date:
-            raise TourAPIException("축제 조회 시작일은 종료일보다 늦을 수 없습니다.")
+            raise BusinessException(ErrorCode.TOUR_FESTIVAL_INVALID_RANGE)
 
         return start_date, end_date
 

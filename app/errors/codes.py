@@ -31,6 +31,26 @@ class ErrorCode(Enum):
     TOUR_FESTIVAL_INVALID_DATE = (400, "축제 조회 날짜는 YYYYMMDD 형식으로 입력해주세요.")
     TOUR_FESTIVAL_INVALID_RANGE = (400, "축제 조회 시작일은 종료일보다 늦을 수 없습니다.")
 
+    # --- TOUR SYNC ---
+    TOUR_SYNC_INVALID_DATE = (400, "행사 날짜는 YYYYMMDD 형식의 유효한 날짜여야 합니다.")
+    TOUR_SYNC_REQUIRED_FIELD = (400, "필수값이 비어 있습니다.")
+    TOUR_SYNC_INVALID_FIELD = (400, "문자열로 변환할 수 없는 값입니다.")
+    TOUR_SYNC_FIELD_TOO_LONG = (400, "필드의 최대 길이를 초과했습니다.")
+    TOUR_SYNC_INVALID_COORDINATE = (400, "좌표 형식이 올바르지 않습니다.")
+    TOUR_SYNC_COORDINATE_RANGE = (400, "좌표 범위를 벗어났습니다.")
+    TOUR_SYNC_INVALID_MODIFIED_TIME = (400, "API 수정 시각이 올바르지 않습니다.")
+    TOUR_SYNC_DATES_REQUIRED = (400, "축제 시작일과 종료일이 필요합니다.")
+    TOUR_SYNC_DATE_RANGE = (400, "축제 시작일이 종료일보다 늦습니다.")
+    TOUR_SYNC_INVALID_ITEM = (400, "콘텐츠는 객체여야 합니다.")
+    TOUR_SYNC_INVALID_ID = (400, "콘텐츠 ID가 없거나 너무 깁니다.")
+    TOUR_SYNC_ID_MISMATCH = (400, "요청한 콘텐츠 ID와 응답이 다릅니다.")
+    TOUR_SYNC_TYPE_MISMATCH = (409, "기존 콘텐츠와 타입이 다릅니다.")
+    TOUR_SYNC_DETAIL_MISMATCH = (409, "콘텐츠 타입과 상세 테이블이 다릅니다.")
+    TOUR_SYNC_CONTENT_NOT_FOUND = (404, "목록을 먼저 저장해야 합니다.")
+    TOUR_SYNC_INVALID_DETAIL = (400, "상세 항목은 1개여야 합니다.")
+    TOUR_SYNC_CONTENT_CHANGED = (409, "수집 중 콘텐츠가 삭제되거나 타입이 변경되었습니다.")
+    TOUR_SYNC_DB_CONFLICT = (409, "DB 저장 중 무결성 충돌이 발생했습니다.")
+
     # --- AUTH ---
     # 로그인 자체가 안 됐거나 인증 수단이 아예 없는 등, 원인을 세분화하지 않은 일반 인증 실패.
     # (토큰이 "없는" 것과 "만료된" 것을 구분해야 하면 별도 ErrorCode를 추가해서 쓴다.)

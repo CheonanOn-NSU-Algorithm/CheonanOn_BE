@@ -1,22 +1,81 @@
+# 충남 관광 정보를 API에서 가져오는 코드
+
+import re
 from datetime import datetime
 
 import requests
+
 from app.config import Config
 from app.errors import BusinessException, ErrorCode
 
+# 충남 코드만 넣어서 시·군·구 구분 없이 전체 조회
+CHUNGNAM_REGION_CODE = 44
+
+
+def with_district(item):
+    # 주소에서 지역명 꺼내기. 주소가 안 왔으면 기존 값은 그대로 둠
+    result = dict(item)
+    if "addr1" not in item:
+        return result
+
+    # 예: "충청남도 천안시 동남구 ..." → "천안시 동남구"
+    address = item["addr1"]
+    match = re.match(
+        r"^(?:충청남도|충남)\s+([^\s]+[시군])(?:\s+([^\s]+구)(?=\s|$))?(?=\s|$)",
+        address.strip() if isinstance(address, str) else "",
+    )
+    result["district"] = (
+        " ".join(part for part in match.groups() if part) if match else None
+    )
+    return result
+
+
+def iter_pages(api, endpoint, params):
+    # 한 번에 100건씩, 마지막 페이지까지 가져오기
+    page, received, expected = 1, 0, None
+    seen = set()
+    # 전체 건수가 바뀌거나 같은 페이지가 계속 오면 중단
+    while True:
+        data = api.request(endpoint, {**params, "pageNo": page, "numOfRows": 100})
+        items = api.get_items(data)
+
+        total_text = str(data["response"]["body"].get("totalCount", ""))
+        if not re.fullmatch(r"[0-9]+", total_text):
+            raise ValueError(f"{endpoint} page={page}: totalCount 오류")
+        total = int(total_text)
+        if expected is not None and total != expected:
+            raise ValueError(f"{endpoint} page={page}: 수집 중 totalCount 변경")
+        expected = total
+        if any(not isinstance(item, dict) for item in items):
+            raise ValueError(f"{endpoint} page={page}: 항목 형식 오류")
+
+        fingerprint = repr(items)
+        if items and fingerprint in seen:
+            raise ValueError(f"{endpoint} page={page}: 동일 페이지 반복")
+        seen.add(fingerprint)
+        if not items and received < total:
+            raise ValueError(f"{endpoint} page={page}: 조기 빈 응답")
+
+        received += len(items)
+        if received > total:
+            raise ValueError(f"{endpoint} page={page}: totalCount 초과")
+
+        yield page, items
+        if received == total:
+            return
+        page += 1
+
 
 class TourAPI:
+    # 여기서는 API 조회만 하고, DB 저장은 TourSyncService에서 처리
+
     def __init__(self):
-        #api키 불러올 때 키 값이 없으면 에러 발생시키기
+        # 키가 없으면 요청 보내기 전에 에러
         if not Config.TOURAPI_KEY:
             raise BusinessException(ErrorCode.TOUR_API_KEY_MISSING)
-        # api 키 불러오기
+        # 키가 이중으로 인코딩되지 않게 먼저 디코딩
         self.api_key = requests.utils.unquote(Config.TOURAPI_KEY)
         self.api_base_url = ("https://apis.data.go.kr/B551011/KorService2")
-
-        # 천안시 구 코드 - 동남구: 131, 서북구: 133
-        # 충남 지역 코드는 44
-        self.cheonan_districts = {"동남구": 131,"서북구": 133}
 
         # 파라미터 기본값 세팅
         self.default_params = {
@@ -28,12 +87,13 @@ class TourAPI:
 
     # 공통으로 API 요청하는 함수
     def request(self, field, params=None):
+        # 요청 실패는 BusinessException으로 넘기기
         api_url = f"{self.api_base_url}/{field}"
 
         # 기본 파라미터 복사
         request_params = self.default_params.copy()
 
-        # 추가 요구하는 파라미터가 있으면 합치기
+        # 추가 파라미터가 있으면 합치기
         if params:
             request_params.update(params)
         try:
@@ -66,6 +126,7 @@ class TourAPI:
         if not isinstance(header, dict):
             raise BusinessException(ErrorCode.TOUR_API_INVALID_RESPONSE)
 
+        # 200 응답이어도 실제 조회는 실패했을 수 있어서 결과 코드도 확인
         result_code = str(header.get("resultCode", ""))
         if result_code != "0000":
             raise BusinessException(ErrorCode.TOUR_API_RESULT_ERROR)
@@ -98,38 +159,32 @@ class TourAPI:
 
         return item_list
 
-    # 콘텐츠 타입별 천안 관광 정보 공통 조회
+    def _region_items(self, endpoint, params):
+        # 전체 페이지를 모아서 각 항목에 지역명 붙이기
+        try:
+            return [
+                with_district(item)
+                for _, items in iter_pages(
+                    self,
+                    endpoint,
+                    {
+                        **params,
+                        "lDongRegnCd": CHUNGNAM_REGION_CODE,
+                        "arrange": "A",
+                    },
+                )
+                for item in items
+            ]
+        except ValueError as error:
+            raise BusinessException(ErrorCode.TOUR_API_INVALID_RESPONSE) from error
+
+    # 콘텐츠 타입별 충청남도 전체 관광 정보 조회
     def get_contents_by_type(self, content_type_id):
-        supported_types = {12, 14}
-        if content_type_id not in supported_types:
+        if content_type_id not in {12, 14}:
             raise BusinessException(ErrorCode.TOUR_INVALID_CONTENT_TYPE)
+        return self._region_items("areaBasedList2", {"contentTypeId": content_type_id})
 
-        all_contents = []
-
-        # 동남구, 서북구 모두 조회
-        for district_name, district_code in self.cheonan_districts.items():
-            data = self.request(
-                "areaBasedList2",
-                {
-                    "numOfRows": 100,
-                    "pageNo": 1,
-                    "contentTypeId": content_type_id,
-                    "lDongRegnCd": 44,  # 충청남도
-                    "lDongSignguCd": district_code,
-                    "arrange": "A",
-                }
-            )
-            contents = self.get_items(data)
-
-            # 어느 구에서 가져온 콘텐츠인지 표시
-            for content in contents:
-                content["district"] = district_name
-
-            all_contents.extend(contents)
-
-        return all_contents
-
-    # 천안의 전체 관광지 조회
+    # 충청남도 전체 관광지 조회
     def spots(self):
         """
         관광지 기본정보 조회
@@ -148,16 +203,16 @@ class TourAPI:
             modifiedtime   수정일
             tel            전화번호
             title          관광지명
-            district       천안시 구 이름(동남구/서북구)
+            district       충남 시·군·구 이름(예: 아산시, 천안시 동남구)
         """
         return self.get_contents_by_type(12)
 
-    # 천안의 전체 문화시설 조회
+    # 충청남도 전체 문화시설 조회
     def cultural_facilities(self):
-        """문화시설(contentTypeId=14) 기본정보 조회"""
+        # 문화시설(contentTypeId=14) 기본정보 조회
         return self.get_contents_by_type(14)
 
-    # 관광지 설명 가져오는 기능 - 하나씩 불러오는거라 일일 트래픽 조심!
+    # 콘텐츠 ID 한 건의 공통 상세 정보 조회
     def spots_report(self, spot_id):
         """
         관광지 설명 및 기본 상세정보 조회
@@ -262,7 +317,7 @@ class TourAPI:
     # 축제 조회
     def festival(self, start_date=None, end_date=None):
         """
-        천안 전체 축제 목록 조회
+        충청남도 전체 축제 목록 조회
 
         들어있는 정보:
             addr1          주소
@@ -277,33 +332,10 @@ class TourAPI:
             mapy           위도
             tel            전화번호
             title          축제명
-            district       천안시 구 이름(동남구/서북구)
+            district       충남 시·군·구 이름(예: 아산시, 천안시 동남구)
         """
         start_date, end_date = self.validate_festival_dates(start_date, end_date)
-        all_festivals = []
-
-        # 동남구, 서북구 모두 조회
-        for district_name, district_code in self.cheonan_districts.items():
-
-            data = self.request(
-                "searchFestival2",
-                {
-                    "numOfRows": 100,
-                    "pageNo": 1,
-                    "eventStartDate": start_date,
-                    "eventEndDate": end_date,
-                    "lDongRegnCd": 44,  # 충청남도
-                    "lDongSignguCd": district_code,
-                    "arrange": "A",
-                }
-            )
-            festivals = self.get_items(data)
-
-            # 어느 구에서 가져온 축제인지 표시
-            for festival in festivals:
-                festival["district"] = district_name
-
-            # 전체 축제 목록에 추가
-            all_festivals.extend(festivals)
-
-        return all_festivals
+        return self._region_items(
+            "searchFestival2",
+            {"eventStartDate": start_date, "eventEndDate": end_date},
+        )

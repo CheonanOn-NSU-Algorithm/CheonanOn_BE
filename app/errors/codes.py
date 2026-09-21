@@ -61,6 +61,13 @@ class ErrorCode(Enum):
     # 프론트에서는 이 code를 보고 리프레시 토큰으로 재발급을 시도하거나 재로그인시키면 된다.
     AUTH_TOKEN_EXPIRED = (401, "토큰이 만료되었습니다.")
 
+    # --- INTERNAL_ERROR ---
+    # BusinessException/HTTPException 어디에도 속하지 않는, 예상 못한 서버 내부 오류
+    # (코드 버그, DB/외부 API 미처리 예외 등)에 사용. app/__init__.py의
+    # @app.errorhandler(Exception)에서 이 코드로 항상 동일한 500 응답을 내려준다.
+    # 실제 원인은 로그로만 남기고 클라이언트에는 구체적인 원인을 노출하지 않는다.
+    COMMON_INTERNAL_ERROR = (500, "알 수 없는 서버 오류")
+
     def __init__(self, status_code: int, message: str):
         self.status_code = status_code
         self.message = message

@@ -12,4 +12,6 @@ from app.models.user import User                      # User 모델을 이 패�
 from app.models.token_blocklist import TokenBlocklist  # TokenBlocklist 모델을 이 패키지 네임스페이스로 노출
 
 # `from app.models import *` 를 했을 때 노출할 이름 목록을 명시적으로 제한
-__all__ = ["User", "TokenBlocklist"]
+from app.models.tour_content import TourContent, PlaceDetail, FestivalDetail
+
+__all__ = ["User", "TokenBlocklist", "TourContent", "PlaceDetail", "FestivalDetail"]

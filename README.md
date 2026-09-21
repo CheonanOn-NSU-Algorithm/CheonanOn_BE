@@ -109,3 +109,29 @@ flask db upgrade
 - `-m` 뒤의 마이그레이션 메시지도 **커밋 컨벤션과 동일한 타입 접두어**(`feat`, `fix`, `refactor` 등)를 붙여서 작성합니다. 나중에 `migrations/versions/`만 훑어봐도 어떤 변경이 어떤 의도였는지 알 수 있게 하기 위함입니다.
 - 모델 파일과 그 모델로 생성된 마이그레이션 스크립트(`migrations/versions/*.py`)는 **같은 커밋에 함께 포함**합니다. 스크립트 없이 모델만 커밋하면 다른 팀원은 `flask db upgrade`를 해도 테이블이 생기지 않습니다.
 - `migrations/` 폴더 전체(`alembic.ini`, `env.py`, `script.py.mako`, `versions/`)는 git으로 관리되는 프로젝트 파일입니다. `.gitignore`에 추가하지 마세요.
+
+## 5. TourAPI 데이터 저장
+
+Flask shell에서 서비스를 호출합니다.
+
+```powershell
+.\venv\Scripts\python.exe -m flask --app wsgi db upgrade
+.\venv\Scripts\python.exe -m flask --app wsgi shell
+```
+
+```python
+from app.services.tour_sync import TourSyncService
+
+service = TourSyncService()
+service.sync_list(12)  # 충청남도 전체 관광지 저장
+service.sync_list(14)  # 충청남도 전체 문화시설 저장
+service.sync_list(15, "20260101", "20261231")  # 지정 기간의 충남 축제 저장
+service.sync_details()  # 저장된 모든 콘텐츠 상세 수집·갱신
+service.sync_detail("콘텐츠_ID")  # 특정 콘텐츠 상세 수집·갱신
+```
+
+- 페이지당 100건씩 `totalCount`까지 조회합니다. 축제 기간 생략 시 올해를 조회합니다.
+- 같은 `content_id`는 갱신하고, 응답에 없는 필드는 기존 값을 유지합니다.
+- 검증 실패 항목과 수집 실패는 반환값의 `failures`에서 확인합니다. 해당 저장은 롤백되고 앞서 저장한 다른 항목은 유지됩니다.
+- 상세 수집은 명시적으로 호출할 때 실행하며, 기간 기준 자동 선별이나 자동 재시도는 하지 않습니다.
+- `tour_api.py`는 API 조회, `tour_sync.py`는 DB 저장을 담당합니다. 모델과 마이그레이션은 DB 초안 구조를 사용합니다.

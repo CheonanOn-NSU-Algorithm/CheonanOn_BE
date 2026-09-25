@@ -110,12 +110,24 @@ flask db upgrade
 - 모델 파일과 그 모델로 생성된 마이그레이션 스크립트(`migrations/versions/*.py`)는 **같은 커밋에 함께 포함**합니다. 스크립트 없이 모델만 커밋하면 다른 팀원은 `flask db upgrade`를 해도 테이블이 생기지 않습니다.
 - `migrations/` 폴더 전체(`alembic.ini`, `env.py`, `script.py.mako`, `versions/`)는 git으로 관리되는 프로젝트 파일입니다. `.gitignore`에 추가하지 마세요.
 
-## 5. TourAPI 데이터 저장
+## 5. 전국 축제 DB 적재
 
-Flask shell에서 서비스를 호출합니다.
+마이그레이션은 행사 관련 10개 테이블을 만들고 카테고리·시도 기준 데이터를 넣습니다.
+축제 목록과 상세 정보는 `events`에 저장하며, 회원 정보는 `users`에 저장합니다.
+`tour_api.py`는 한국관광공사 API 조회, `tour_sync.py`는 응답 검증과 DB 적재를 담당합니다.
+프론트엔드용 행사 HTTP API와 자동 수집은 아직 구현되지 않았습니다.
+
+MySQL 데이터베이스를 만들고 `.env`에 `SQLALCHEMY_DATABASE_URI`와 `TOURAPI_KEY`를 설정합니다.
+기존 접속 URL의 DB 이름만 바꾸려면 `CHEONANON_DB_NAME`을 선택적으로 설정할 수 있습니다.
+그다음 마이그레이션을 적용합니다.
 
 ```powershell
 .\venv\Scripts\python.exe -m flask --app wsgi db upgrade
+```
+
+Flask shell에서 목록을 먼저 수집하고, 필요한 경우 상세 정보를 채웁니다.
+
+```powershell
 .\venv\Scripts\python.exe -m flask --app wsgi shell
 ```
 
@@ -123,15 +135,12 @@ Flask shell에서 서비스를 호출합니다.
 from app.services.tour_sync import TourSyncService
 
 service = TourSyncService()
-service.sync_list(12)  # 충청남도 전체 관광지 저장
-service.sync_list(14)  # 충청남도 전체 문화시설 저장
-service.sync_list(15, "20260101", "20261231")  # 지정 기간의 충남 축제 저장
-service.sync_details()  # 저장된 모든 콘텐츠 상세 수집·갱신
-service.sync_detail("콘텐츠_ID")  # 특정 콘텐츠 상세 수집·갱신
+list_report = service.sync_list()
+detail_report = service.sync_details()
+print(list_report, detail_report)
 ```
 
-- 페이지당 100건씩 `totalCount`까지 조회합니다. 축제 기간 생략 시 올해를 조회합니다.
-- 같은 `content_id`는 갱신하고, 응답에 없는 필드는 기존 값을 유지합니다.
-- 검증 실패 항목과 수집 실패는 반환값의 `failures`에서 확인합니다. 해당 저장은 롤백되고 앞서 저장한 다른 항목은 유지됩니다.
-- 상세 수집은 명시적으로 호출할 때 실행하며, 기간 기준 자동 선별이나 자동 재시도는 하지 않습니다.
-- `tour_api.py`는 API 조회, `tour_sync.py`는 DB 저장을 담당합니다. 모델과 마이그레이션은 DB 초안 구조를 사용합니다.
+- `sync_list()`는 지역 제한 없이 페이지를 순회합니다. 기간을 생략하면 한국 시간 기준 이번 달 1일부터 1년간 조회합니다. 직접 기간을 지정하려면 `sync_list(start_date="20260901", end_date="20270831")`처럼 호출합니다.
+- `sync_details()`는 `events`에 저장된 모든 행에 대해 소개·장소·요금 등의 상세 API를 조회합니다. API 응답에 없는 값은 비어 있을 수 있습니다.
+- 같은 행사는 `tour_content_id`로 판별해 갱신하며, 반환값의 `failures`에서 실패 항목을 확인할 수 있습니다.
+- 이미 받은 `searchFestival2` JSON 파일을 넣을 때만 `service.import_json(r"C:\경로\message.txt")`를 사용합니다. 이 파일에는 상세 정보가 없으므로 이후 `sync_details()`가 필요합니다.

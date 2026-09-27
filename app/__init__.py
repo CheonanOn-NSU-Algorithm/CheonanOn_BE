@@ -6,6 +6,8 @@ from app.errors import BusinessException, ErrorCode  # 공통 비지니스 예�
 from app.common_response import CommonResponse  # 공통 응답 반환
 from werkzeug.exceptions import HTTPException
 
+from app.api.reviews import review_bp   # 우리가 만든 리뷰 Blueprint를 가져온다.
+
 from app.extensions import db, migrate, jwt  # DB/마이그레이션/JWT 확장 객체 (app에 바인딩할 예정)
 # models 패키지를 import해서 User, TokenBlocklist 등 모델 클래스들을 로드시킴.
 # 이 코드에서 직접 모델을 쓰지는 않지만, Flask-Migrate가 마이그레이션을 자동 생성할 때
@@ -20,6 +22,9 @@ def create_app():
     db.init_app(app)          # extensions.py에서 만든 db 객체를 이 app에 연결
     migrate.init_app(app, db) # Alembic 마이그레이션이 이 app/db 조합을 쓰도록 연결
     jwt.init_app(app)         # JWT 인증 기능을 이 app에 연결
+
+    app.register_blueprint(review_bp)   # 리뷰 Blueprint를 Flask 앱에 등록한다.
+                                        # 이 코드가 있어야 Flask가 /reviews API를 인식한다.
 
     register_error_handlers(app)  # ApiException 공통 에러 핸들러 등록
 

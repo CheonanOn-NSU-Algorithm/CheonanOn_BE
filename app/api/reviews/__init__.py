@@ -11,12 +11,12 @@ from app.schemas.review import (
 )
 
 
-# 실제 DB 작업을 담당하는 Service 함수들을 가져온다.
+# 실제 DB 작업을 담당하는 리뷰 생성, 조회, 수정, 삭제 함수들을 가져온다.
 # API에서는 직접 DB를 조작하지 않고 Service 함수를 호출해서 DB 작업을 처리한다.
 from app.services.review_service import (
     create_review,
     get_reviews_by_tour_content,
-    get_review,
+    get_my_reviews,
     update_review,
     delete_review,
 )
@@ -90,35 +90,27 @@ def get_by_tour_content(tour_content_id):
     ]), 200
 
 
-# GET /reviews/<review_id> 요청이 들어오면 실행된다.
-# 특정 리뷰 하나를 조회한다.
-@review_bp.route(
-    "/<int:review_id>",
-    methods=["GET"]
-)
-def get_one(review_id):
+# 현재 사용자가 작성한 리뷰 목록을 조회한다.
+@review_bp.route("/my", methods=["GET"])
+def get_my():
+    # 현재는 JWT 인증이 구현되지 않았기 때문에
+    # 테스트를 위해 URL의 user_id 파라미터를 사용한다.
+    user_id = request.args.get("user_id", type=int)
 
-    # Service를 통해 리뷰를 조회한다.
-    review = get_review(review_id)
+    # 해당 사용자가 작성한 리뷰를 조회한다.
+    reviews = get_my_reviews(user_id)
 
-    # 해당 ID의 리뷰가 존재하지 않는 경우
-    if review is None:
-
-        # 리뷰를 찾을 수 없다는 메시지를 JSON으로 반환한다.
-        # 404: 요청한 리소스를 찾을 수 없다는 의미이다.
-        return jsonify({
-            "message": "리뷰를 찾을 수 없습니다."
-        }), 404
-
-    # 리뷰가 존재하면 리뷰 정보를 JSON 형태로 반환한다.
-    return jsonify({
-        "id": review.id,
-        "user_id": review.user_id,
-        "tour_content_id": review.tour_content_id,
-        "rating": review.rating,
-        "content": review.content,
-    }), 200
-
+    # 조회된 리뷰들을 JSON 배열 형태로 변환해서 반환한다.
+    return jsonify([
+        {
+            "id": review.id,
+            "user_id": review.user_id,
+            "tour_content_id": review.tour_content_id,
+            "rating": review.rating,
+            "content": review.content,
+        }
+        for review in reviews
+    ]), 200
 
 # PUT /reviews/<review_id> 요청이 들어오면 실행된다.
 # 기존 리뷰를 수정한다.

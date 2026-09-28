@@ -33,26 +33,20 @@ def create_review(user_id, tour_content_id, rating, content):
 
 # 특정 관광 콘텐츠에 작성된 리뷰를
 # 모두 가져오는 함수
+# 특정 행사에 작성된 모든 리뷰를 조회한다.
 def get_reviews_by_tour_content(tour_content_id):
-
-    # Review 테이블에서
-    # tour_content_id가 전달받은 값과 같은 데이터만 찾는다.
-    #
-    # .all()은 조건에 맞는 모든 리뷰를 가져온다.
+    # 전달받은 행사 ID와 일치하는 리뷰를 모두 조회한다.
     return Review.query.filter_by(
         tour_content_id=tour_content_id
     ).all()
 
 
-# 리뷰 ID를 이용해서 리뷰 하나를 조회하는 함수
-def get_review(review_id):
-
-    # Review 테이블의 기본키(id)를 이용해서
-    # 해당 리뷰를 조회한다.
-    #
-    # 리뷰가 존재하면 Review 객체를 반환하고,
-    # 존재하지 않으면 None을 반환한다.
-    return Review.query.get(review_id)
+# 특정 사용자가 작성한 모든 리뷰를 조회한다.
+def get_my_reviews(user_id):
+    # 전달받은 사용자 ID와 일치하는 리뷰를 모두 조회한다.
+    return Review.query.filter_by(
+        user_id=user_id
+    ).all()
 
 
 # 기존 리뷰를 수정하는 함수

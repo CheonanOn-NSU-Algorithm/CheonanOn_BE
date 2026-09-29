@@ -7,7 +7,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import Session
 
 from app.errors import BusinessException, ErrorCode
@@ -141,7 +141,15 @@ def _fee(fee_text):
         return 0, True
     amounts = [int(raw.replace(",", "")) for raw in re.findall(r"(\d[\d,]*)\s*원", fee_text)]
     if amounts:
-        return min(amounts), False
+        price = min(amounts)
+        # price 컬럼은 signed INT다. DB에서 범위 오류가 나기 전에 해당 항목을 거부한다.
+        if price > 2_147_483_647:
+            raise BusinessException(
+                ErrorCode.TOUR_SYNC_INVALID_DATA,
+                extra={"field": "usetimefestival", "reason": "price_out_of_range"},
+            )
+        # 0원만 안내한 행사는 무료다. 양수 금액이나 유료 안내가 함께 있으면 유료로 둔다.
+        return price, not any(amounts) and "유료" not in fee_text
     if "유료" in fee_text:
         return None, False
     return None, None
@@ -170,7 +178,13 @@ class TourSyncService:
                 ErrorCode.TOUR_SYNC_INVALID_DATA,
                 extra={"reason": "item_not_object"},
             )
-        identifier = str(item.get("contentid", "")).strip()
+        # None·객체·배열을 문자열로 바꾸면 잘못된 ID가 정상 값처럼 저장될 수 있다.
+        raw_id = item.get("contentid")
+        identifier = (
+            str(raw_id).strip()
+            if isinstance(raw_id, (str, int)) and not isinstance(raw_id, bool)
+            else ""
+        )
         if not identifier or len(identifier) > 20:
             raise BusinessException(
                 ErrorCode.TOUR_SYNC_INVALID_DATA,
@@ -237,17 +251,7 @@ class TourSyncService:
 
         # 같은 필드는 상세 응답을 우선한다. 아예 없는 필드는 _assign이 건너뛴다.
         merged = {**list_item, **common, **intro}
-        # lDongRegnCd는 세종처럼 5자리로 올 수 있으므로 앞 두 자리만 사용.
-        code = str(merged.get("lclsSystm3") or list_item.get("lclsSystm3") or "").strip()
-        sido_code = str(merged.get("lDongRegnCd") or list_item.get("lDongRegnCd") or "")[:2]
-        if not re.fullmatch(r"[0-9]{2}", sido_code):
-            raise BusinessException(
-                ErrorCode.TOUR_SYNC_INVALID_DATA,
-                extra={"field": "lDongRegnCd", "reason": "invalid_sido", "value": sido_code},
-            )
-        category_name = _category(code)
-        # 상세 응답의 빈 분류/날짜가 목록의 유효한 값을 덮지 않도록 한다.
-        merged["lclsSystm3"] = code
+        # 상세 응답의 빈 날짜가 목록의 유효한 값을 덮지 않도록 한다.
         for key in ("eventstartdate", "eventenddate"):
             if not _value(merged, key) and _value(list_item, key):
                 merged[key] = list_item[key]
@@ -256,15 +260,6 @@ class TourSyncService:
             # 한 행사와 태그의 변경을 하나의 트랜잭션으로 묶는다.
             # 아래 어느 검증이나 DB 작업이 실패해도 이 행사만 롤백된다.
             with Session(self.engine) as session, session.begin():
-                # FK 기준값은 마이그레이션이 시드한다. 모르는 코드를
-                # 임의로 새 분류/지역으로 만들지 않는다.
-                category = session.scalar(select(Category).where(Category.name == category_name))
-                sido = session.get(Sido, sido_code)
-                if category is None or sido is None:
-                    raise BusinessException(
-                        ErrorCode.TOUR_SYNC_SEED_MISSING,
-                        extra={"category": category_name, "sido_code": sido_code},
-                    )
                 # 동일 콘텐츠를 재수집하면 행 잠금을 잡고 수정한다.
                 row = session.scalar(
                     select(Event)
@@ -276,7 +271,36 @@ class TourSyncService:
                     if require_existing:
                         raise BusinessException(ErrorCode.TOUR_SYNC_CONTENT_CHANGED)
                     row = Event(tour_content_id=identifier)
-                    session.add(row)
+
+                # 미전달 필드는 행 잠금을 잡은 뒤 읽은 최신 값으로 유지한다.
+                # API 호출 전에 복사한 값을 사용하면 다른 요청의 갱신을 덮을 수 있다.
+                code = str(
+                    _value(merged, "lclsSystm3")
+                    or _value(list_item, "lclsSystm3")
+                    or row.lcls_code or ""
+                ).strip()
+                # lDongRegnCd는 세종처럼 5자리로 올 수 있으므로 앞 두 자리만 사용한다.
+                sido_code = str(
+                    _value(merged, "lDongRegnCd")
+                    or _value(list_item, "lDongRegnCd")
+                    or row.sido_code or ""
+                )[:2]
+                if not re.fullmatch(r"[0-9]{2}", sido_code):
+                    raise BusinessException(
+                        ErrorCode.TOUR_SYNC_INVALID_DATA,
+                        extra={"field": "lDongRegnCd", "reason": "invalid_sido", "value": sido_code},
+                    )
+                category_name = _category(code)
+                merged["lclsSystm3"] = code
+                # FK 기준값은 마이그레이션이 시드한다. 모르는 코드를 임의로 만들지 않는다.
+                category = session.scalar(select(Category).where(Category.name == category_name))
+                sido = session.get(Sido, sido_code)
+                if category is None or sido is None:
+                    raise BusinessException(
+                        ErrorCode.TOUR_SYNC_SEED_MISSING,
+                        extra={"category": category_name, "sido_code": sido_code},
+                    )
+                session.add(row)
                 row.category_id, row.sido_code = category.id, sido_code
                 self._assign(row, merged)
                 if not row.title:
@@ -326,24 +350,25 @@ class TourSyncService:
                 return row.id
         except IntegrityError as error:
             raise BusinessException(ErrorCode.TOUR_SYNC_DB_CONFLICT) from error
+        except DataError as error:
+            # DB가 거부한 길이·범위 오류도 한 건의 검증 실패로 기록해 다음 항목을 수집한다.
+            raise BusinessException(
+                ErrorCode.TOUR_SYNC_INVALID_DATA,
+                extra={"reason": "database_value_rejected"},
+            ) from error
 
     def sync_detail(self, content_id):
         # 이미 저장된 Event의 상세만 새로 받아 한 건을 갱신한다.
-        identifier = str(content_id)
+        identifier = self._identity({"contentid": content_id})
         with Session(self.engine) as session:
             row = session.scalar(select(Event).where(Event.tour_content_id == identifier))
             if row is None:
                 raise BusinessException(ErrorCode.TOUR_SYNC_CONTENT_NOT_FOUND)
-            # 필수 분류·지역·기간은 상세 응답에 없을 수 있으므로 기존 값을 전달한다.
-            item = {
-                "contentid": identifier,
-                "contenttypeid": "15",
-                "title": row.title,
-                "lclsSystm3": row.lcls_code,
-                "lDongRegnCd": row.sido_code,
-                "eventstartdate": row.start_date.strftime("%Y%m%d"),
-                "eventenddate": row.end_date.strftime("%Y%m%d"),
-            }
+        # 기존 필드는 복사하지 않는다. _save()가 잠근 행에서 미전달 값을 유지한다.
+        item = {
+            "contentid": identifier,
+            "contenttypeid": "15",
+        }
         return self._save(
             item,
             self.api.festival_common(identifier),

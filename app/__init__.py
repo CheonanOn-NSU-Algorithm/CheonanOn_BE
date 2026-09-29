@@ -1,4 +1,5 @@
 from flask import Flask, jsonify  # Flask 앱 객체 생성, 에러 핸들러 응답용 jsonify
+from marshmallow import ValidationError
 
 from app.config import Config  # JWT_SECRET_KEY, DB URI 등 환경설정 값을 담은 클래스
 
@@ -21,7 +22,11 @@ def create_app():
     migrate.init_app(app, db) # Alembic 마이그레이션이 이 app/db 조합을 쓰도록 연결
     jwt.init_app(app)         # JWT 인증 기능을 이 app에 연결
 
-    register_error_handlers(app)  # ApiException 공통 에러 핸들러 등록
+    # 행사 Blueprint는 목록·상세 경로만 정의하고 기본 /api/v1/event 경로를 여기서 붙인다.
+    from app.api.events.routes import events_bp
+
+    app.register_blueprint(events_bp, url_prefix="/api/v1/event")
+    register_error_handlers(app)  # 요청 검증과 비즈니스·HTTP 오류 핸들러 등록
 
     return app
 
@@ -32,16 +37,26 @@ def register_error_handlers(app: Flask):
     전부 공통 JSON 포맷으로 응답한다. Flask는 raise된 예외의 타입과 가장 가까운
     @app.errorhandler를 자동으로 찾아 호출해주기 때문에, 등록 순서는 상관없다.
 
-    아래 3개 핸들러는 "얼마나 예상된 예외인가" 순으로 안전망이 겹쳐 있다.
-    1) BusinessException : 우리가 의도적으로 raise하는 비즈니스 실패 케이스.
+    아래 핸들러는 "얼마나 예상된 예외인가" 순으로 안전망이 겹쳐 있다.
+    1) ValidationError : Marshmallow 스키마의 요청 파라미터 검증 실패.
+    2) BusinessException : 우리가 의도적으로 raise하는 비즈니스 실패 케이스.
        새 실패 케이스가 생겨도 이 함수나 새 예외 클래스를 추가할 필요 없이
        app/errors/codes.py의 ErrorCode에 멤버 하나만 추가하고
        raise BusinessException(ErrorCode.그_멤버)만 하면 된다.
-    2) HTTPException : 존재하지 않는 라우트(404), 잘못된 HTTP 메서드(405) 등
+    3) HTTPException : 존재하지 않는 라우트(404), 잘못된 HTTP 메서드(405) 등
        Flask/Werkzeug가 라우팅 단계에서 자체적으로 던지는 예외.
-    3) Exception : 위 두 경우로 못 거른, 코드 버그나 외부 API 실패 등
+    4) Exception : 위 경우로 못 거른, 코드 버그나 외부 API 실패 등
        예상 못한 모든 예외를 잡는 최종 안전망. 이게 없으면 이런 예외는
        그대로 500으로 터지면서 우리 공통 응답 포맷을 벗어난다."""
+
+    @app.errorhandler(ValidationError)
+    def handle_validation_error(e: ValidationError):
+        # 필드별 검증 사유를 유지하면서 기존 공통 오류 형식으로 400을 응답한다.
+        body = CommonResponse.error(
+            ErrorCode.COMMON_INVALID_INPUT,
+            extra={"fields": e.messages},
+        )
+        return jsonify(body), 400
 
     @app.errorhandler(BusinessException)
     def handle_business_exception(e: BusinessException):

@@ -18,6 +18,10 @@ class ErrorCode(Enum):
     # 도메인을 특정하기 애매한 일반적인 요청 값 오류(필수값 누락, 형식 오류 등)에 사용.
     COMMON_INVALID_INPUT = (400, "요청 값이 올바르지 않습니다.")
 
+    # --- EVENT ---
+    # 행사 상세 URL에 해당하는 ID가 없을 때 사용한다.
+    EVENT_NOT_FOUND = (404, "존재하지 않는 행사입니다.")
+
     # --- TOUR API ---
     # 연결/HTTP/API 실패는 요청 실패로, 응답 구조/페이지 오류는 응답 오류로 묶는다.
     # 세부 원인은 BusinessException.extra의 reason에 기록한다.

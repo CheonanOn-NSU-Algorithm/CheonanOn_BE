@@ -146,3 +146,23 @@ event_id = service.sync_detail("2746930")  # TourAPI contentid; 실제 저장된
 응답에 아예 없는 필드는 기존 값을 유지합니다. 같은 ID를 다시 수집해도 새 행사 행이 중복 생성되지 않으며 `view_count`와 `event_daily_views` 값도 초기화하지 않습니다. 조회수 증가는 행사 상세 API 구현에서 처리해야 하며 이 수집 서비스는 조회수를 증가시키지 않습니다. 행사 기간이 90일을 넘으면 `is_permanent`가 참이 됩니다.
 
 반환값은 `{"saved": 0, "failures": [], "complete": True}` 형태입니다. `saved`는 저장 성공 항목 수, `failures`는 페이지·content ID·에러 코드·메시지, `complete`는 실패가 하나도 없었는지를 뜻합니다. 한 축제 저장이 실패하면 해당 축제 트랜잭션만 롤백하고 다음 항목을 계속합니다. 목록 페이지 자체가 실패하면 그 시점에 중단되며 앞서 완료한 저장은 남습니다. 자동 재시도와 정기 실행은 포함하지 않습니다. 실패 원인을 고친 뒤 같은 기간으로 다시 실행하면 `tour_content_id` 기준으로 갱신됩니다.
+
+## 6. 행사 조회 API
+
+Flask 앱 실행 후 저장된 행사에 다음 공개 API로 접근합니다. TourAPI를 호출하지 않고 DB에 수집된 데이터만 조회합니다.
+
+| 경로 | 설명 |
+|---|---|
+| `GET /api/v1/event` | 행사 목록·검색·필터·페이지 조회 |
+| `GET /api/v1/event/<id>` | 행사 한 건의 상세 조회 (`events.id` 사용) |
+
+목록에는 `q`(행사명·장소·태그), `category_id`(카테고리 ID), `sido_code`(두 자리 시도 코드), `is_free`(`true`/`false`), `start_date`·`end_date`(`YYYY-MM-DD`), `sort`(`latest`·`popular`·`dateAsc`), `page`(기본 1), `size`(기본 20, 최대 100)를 전달할 수 있습니다. 기간 조건은 행사 기간과 조회 기간이 하루라도 겹치면 포함합니다. `popular`는 현재 누적 `view_count` 기준이며 주간 조회수 순위는 아닙니다.
+
+```text
+GET /api/v1/event?q=축제&sido_code=44&page=1&size=20
+GET /api/v1/event/1
+```
+
+성공 응답은 기존 `CommonResponse` 형식인 `{"success": true, "message": "OK", "data": ...}`를 사용합니다. 목록의 `data`에는 `totalCount`, `page`, `size`, `events`가 들어갑니다. 잘못된 쿼리값은 `400 COMMON_INVALID_INPUT`과 `fields`에 필드별 오류를 반환하며, 없는 행사 ID는 `404 EVENT_NOT_FOUND`를 반환합니다. 상세 조회 시 조회수 증가는 아직 수행하지 않습니다.
+
+요청·응답 필드와 오류 예시는 [행사 API 명세서](docs/event_api_spec.md)를 확인합니다.

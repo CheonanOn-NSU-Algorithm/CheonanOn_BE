@@ -22,3 +22,24 @@ feature/bookmark-yeonjoon-hyunjin-mixed
 
 
 북마크 API는 app/api/bookmarks, 비즈니스 로직은 app/services/bookmark_service.py, 북마크 모델은 기존 app/models/event.py에 추가했고, 요청/응답은 app/schemas/bookmark.py, DB 테이블 생성은 migrations/versions/20260929_add_bookmarks_table.py에서
+
+
+app/models/event.py
+
+→ Event 모델 + Bookmark 모델
+
+app/services/bookmark_service.py
+
+→ 북마크 C/R/D 실제 처리
+
+app/api/bookmarks/__init__.py
+
+→ 북마크 API 주소(POST/GET/DELETE)
+
+app/schemas/bookmark.py
+
+→ 요청·응답 형식
+
+migrations/versions/20260929_add_bookmarks_table.py
+
+→ DB bookmarks 테이블 생성

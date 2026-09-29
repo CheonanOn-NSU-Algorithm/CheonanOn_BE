@@ -110,28 +110,39 @@ flask db upgrade
 - 모델 파일과 그 모델로 생성된 마이그레이션 스크립트(`migrations/versions/*.py`)는 **같은 커밋에 함께 포함**합니다. 스크립트 없이 모델만 커밋하면 다른 팀원은 `flask db upgrade`를 해도 테이블이 생기지 않습니다.
 - `migrations/` 폴더 전체(`alembic.ini`, `env.py`, `script.py.mako`, `versions/`)는 git으로 관리되는 프로젝트 파일입니다. `.gitignore`에 추가하지 마세요.
 
-## 5. TourAPI 데이터 저장
+## 5. TourAPI 전국 축제 데이터 저장
 
-Flask shell에서 서비스를 호출합니다.
+### 준비와 테이블
+
+`.env`에 `TOURAPI_KEY`와 `SQLALCHEMY_DATABASE_URI`를 설정합니다. API 키는 공공데이터포털의 한국관광공사 국문 관광정보 서비스 GW 키입니다. 아래 명령은 PowerShell에서 프로젝트 루트 기준으로 실행합니다.
 
 ```powershell
-.\venv\Scripts\python.exe -m flask --app wsgi db upgrade
-.\venv\Scripts\python.exe -m flask --app wsgi shell
+.\.venv\Scripts\python.exe -m flask --app wsgi db upgrade
+.\.venv\Scripts\python.exe -m flask --app wsgi shell
 ```
+
+이번 수집에서 사용하는 테이블은 `events`, `event_tags`, `tags`, `event_daily_views`, `sidos`, `categories` 여섯 개입니다. 숫자형 PK/FK는 모두 `INT`이며, `sidos.code`는 TourAPI의 두 자리 지역 코드이므로 문자형입니다. 마이그레이션이 카테고리 5개, 시도 16개, 검색 태그 사전을 채웁니다. 이전 개발용 `tour_content`, `place_detail`, `festival_detail` 테이블은 새 초기화 스키마에서 생성하지 않습니다. 기존 개발 DB를 초기화하면 이전 데이터는 삭제되며 전국 축제를 다시 수집해야 합니다.
+
+### 수집 실행
 
 ```python
 from app.services.tour_sync import TourSyncService
 
 service = TourSyncService()
-service.sync_list(12)  # 충청남도 전체 관광지 저장
-service.sync_list(14)  # 충청남도 전체 문화시설 저장
-service.sync_list(15, "20260101", "20261231")  # 지정 기간의 충남 축제 저장
-service.sync_details()  # 저장된 모든 콘텐츠 상세 수집·갱신
-service.sync_detail("콘텐츠_ID")  # 특정 콘텐츠 상세 수집·갱신
+result = service.sync_festivals("20260101", "20261231")  # 전국 축제·공연·전시 등 행사
+print(result)
+
+# 기간을 생략하면 실행 시점의 1월 1일부터 12월 31일까지 조회합니다.
+result = service.sync_festivals()
+
+# 이미 events에 저장된 행사 한 건의 상세 정보만 다시 가져옵니다.
+event_id = service.sync_detail("2746930")  # TourAPI contentid; 실제 저장된 ID로 변경
 ```
 
-- 페이지당 100건씩 `totalCount`까지 조회합니다. 축제 기간 생략 시 올해를 조회합니다.
-- 같은 `content_id`는 갱신하고, 응답에 없는 필드는 기존 값을 유지합니다.
-- 검증 실패 항목과 수집 실패는 반환값의 `failures`에서 확인합니다. 해당 저장은 롤백되고 앞서 저장한 다른 항목은 유지됩니다.
-- 상세 수집은 명시적으로 호출할 때 실행하며, 기간 기준 자동 선별이나 자동 재시도는 하지 않습니다.
-- `tour_api.py`는 API 조회, `tour_sync.py`는 DB 저장을 담당합니다. 모델과 마이그레이션은 DB 초안 구조를 사용합니다.
+`sync_festivals()`는 `searchFestival2`를 지역 필터 없이 조회하므로 전국 범위입니다. 한 페이지에 100건씩 `totalCount`까지 조회합니다. 시작일과 종료일은 둘 다 `YYYYMMDD` 형식으로 전달하거나 둘 다 생략해야 합니다. `TourAPI.festival()`은 DB 저장 없이 목록만 확인할 때 사용할 수 있습니다.
+
+각 목록 항목마다 `detailCommon2`와 `detailIntro2`를 가져온 뒤 `tour_content_id`를 기준으로 `events`에 추가 또는 갱신합니다. 상세 API 호출과 검증이 모두 끝나기 전에는 DB를 바꾸지 않습니다. `overview`는 소개글, `eventplace`는 장소, `mapy`/`mapx`는 위도/경도, `lDongRegnCd` 앞 두 자리는 `sidos.code`에 대응합니다. `lclsSystm3`은 시드 분류 규칙에 따라 축제·계절행사·공연·전시·체험으로 변환합니다. 소개글에서 시드 태그 단어가 발견되면 `event_tags`를 갱신합니다. `fee_text`는 실제 API 응답이 500자를 넘을 수 있어 원문을 `TEXT`로 저장합니다. 요금은 명확한 원 단위 금액이나 무료 표시가 있을 때만 `price`와 `is_free`로 변환하고, 판단할 수 없으면 `NULL`로 둡니다.
+
+응답에 아예 없는 필드는 기존 값을 유지합니다. 같은 ID를 다시 수집해도 새 행사 행이 중복 생성되지 않으며 `view_count`와 `event_daily_views` 값도 초기화하지 않습니다. 조회수 증가는 행사 상세 API 구현에서 처리해야 하며 이 수집 서비스는 조회수를 증가시키지 않습니다. 행사 기간이 90일을 넘으면 `is_permanent`가 참이 됩니다.
+
+반환값은 `{"saved": 0, "failures": [], "complete": True}` 형태입니다. `saved`는 저장 성공 항목 수, `failures`는 페이지·content ID·에러 코드·메시지, `complete`는 실패가 하나도 없었는지를 뜻합니다. 한 축제 저장이 실패하면 해당 축제 트랜잭션만 롤백하고 다음 항목을 계속합니다. 목록 페이지 자체가 실패하면 그 시점에 중단되며 앞서 완료한 저장은 남습니다. 자동 재시도와 정기 실행은 포함하지 않습니다. 실패 원인을 고친 뒤 같은 기간으로 다시 실행하면 `tour_content_id` 기준으로 갱신됩니다.

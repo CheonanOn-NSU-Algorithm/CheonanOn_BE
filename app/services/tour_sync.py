@@ -1,10 +1,9 @@
-"""TourAPI에서 받은 데이터를 DB에 저장하는 코드.
+# 전국 TourAPI 축제를 events와 event_tags에 저장하는 서비스.
+# 목록 한 건마다 상세 API 두 개를 먼저 조회하고, 한 트랜잭션 안에서
+# 행사와 태그 연결을 저장한다. 실패 건은 롤백하되 다음 행사는 계속 처리한다.
 
-Flask 앱 컨텍스트 안에서 사용하고, 저장할 때마다 별도 세션을 열어서 처리.
-API 수정 시각은 한국 시간 기준으로 읽음. 다른 시간대면 api_timezone으로 지정.
-"""
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import select
@@ -13,385 +12,382 @@ from sqlalchemy.orm import Session
 
 from app.errors import BusinessException, ErrorCode
 from app.extensions import db
-from app.models import TourContent, PlaceDetail, FestivalDetail
-from app.models.tour_content import utc_now
-from app.services.tour_api import TourAPI, CHUNGNAM_REGION_CODE, iter_pages, with_district
+from app.models.tour_content import Category, Event, Sido, Tag
+from app.services.tour_api import TourAPI
 
-# 왼쪽은 API 필드명, 오른쪽은 DB 컬럼명
-COMMON = {
+# API 필드가 응답에 없으면 기존 값은 유지하고, 빈 문자열이면 NULL로 갱신한다.
+# 오른쪽 컬럼의 최대 길이는 모델 메타데이터에서 검사한다.
+TEXT_FIELDS = {
     "title": "title",
-    "addr1": "addr1",
-    "addr2": "addr2",
-    "zipcode": "zipcode",
-    "tel": "tel",
-    "homepage": "homepage",
-    "overview": "overview",
-    "firstimage": "first_image",
-    "firstimage2": "first_image2",
-    "district": "district",
-}
-# 관광지와 문화시설은 필드명이 달라서 따로 매핑
-PLACE = {
-    12: {
-        "infocenter": "info_center",
-        "opendate": "open_date",
-        "restdate": "rest_date",
-        "usetime": "use_time",
-        "parking": "parking",
-        "expguide": "experience_guide",
-        "expagerange": "experience_age",
-        "chkbabycarriage": "baby_carriage",
-        "chkpet": "pet",
-        "chkcreditcard": "credit_card",
-    },
-    14: {
-        "infocenterculture": "info_center",
-        "restdateculture": "rest_date",
-        "usetimeculture": "use_time",
-        "usefee": "use_fee",
-        "parkingculture": "parking",
-        "chkbabycarriageculture": "baby_carriage",
-        "chkpetculture": "pet",
-        "chkcreditcardculture": "credit_card",
-    },
-}
-# 축제 정보 매핑
-FESTIVAL = {
-    "eventplace": "event_place",
+    "overview": "description",
     "playtime": "play_time",
-    "usetimefestival": "use_fee",
-    "sponsor1": "sponsor",
-    "sponsor1tel": "sponsor_tel",
-    "sponsor2": "organizer",
-    "sponsor2tel": "organizer_tel",
-    "program": "program",
+    "eventplace": "venue_name",
+    "addr1": "address",
+    "addr2": "address_detail",
+    "firstimage": "image_url",
+    "firstimage2": "thumbnail_url",
+    "usetimefestival": "fee_text",
+    "sponsor1": "organizer",
+    "tel": "contact_phone",
+    "homepage": "homepage_url",
+    "lclsSystm3": "lcls_code",
 }
 
+# 사전은 검색 기능에서 사용할 키워드만 포함한다. 등록되지 않은 단어를 태그로
+# 만들지 않아 재수집할 때 관계와 검색 결과가 예측 가능하다.
+TAG_KEYWORDS = (
+    "불꽃놀이",
+    "푸드트럭",
+    "야간",
+    "체험",
+    "가족",
+    "공연",
+    "전시",
+    "음악",
+    "꽃",
+    "먹거리",
+)
 
-def clean(value):
-    # 빈 값이나 공백만 있으면 NULL로 저장
-    return (
-        None
-        if value is None or (isinstance(value, str) and not value.strip())
-        else value
-    )
+
+def _value(item, key):
+    # API 문자열의 양끝 공백을 제거한다. 빈 문자열을 NULL로 바꾸는 일은
+    # 컬럼별 유효성 검사와 함께 _assign()에서 처리한다.
+    value = item.get(key)
+    return value.strip() if isinstance(value, str) else value
 
 
-def date_value(value):
-    # YYYYMMDD 문자열을 날짜로 바꾸기
+def _date(value, field):
+    # API의 YYYYMMDD를 DB DATE로 변환한다. 형식과 실제 날짜를 모두 검증한다.
     text = str(value)
     if not re.fullmatch(r"[0-9]{8}", text):
-        raise BusinessException(ErrorCode.TOUR_SYNC_INVALID_DATE)
+        raise BusinessException(
+            ErrorCode.TOUR_SYNC_INVALID_DATA,
+            extra={"field": field, "reason": "invalid_date"},
+        )
     try:
         return datetime.strptime(text, "%Y%m%d").date()
     except ValueError as error:
-        raise BusinessException(ErrorCode.TOUR_SYNC_INVALID_DATE) from error
+        raise BusinessException(
+            ErrorCode.TOUR_SYNC_INVALID_DATA,
+            extra={"field": field, "reason": "invalid_date"},
+        ) from error
 
 
-def assign_fields(model, item, mapping):
-    # 응답에 없는 필드는 건드리지 않기. 기존 상세 정보가 지워지면 안 됨
-    for source, target in mapping.items():
-        if source not in item:
-            continue
-        value = clean(item[source])
-        column = model.__table__.columns[target]
-        if value is None and not column.nullable:
-            raise BusinessException(
-                ErrorCode.TOUR_SYNC_REQUIRED_FIELD,
-                extra={"field": source},
-            )
-        if value is not None:
-            if not isinstance(value, (str, int, float)):
-                raise BusinessException(
-                    ErrorCode.TOUR_SYNC_INVALID_FIELD,
-                    extra={"field": source},
-                )
-            value = str(value)
-            limit = getattr(column.type, "length", None)
-            if limit and len(value) > limit:
-                raise BusinessException(
-                    ErrorCode.TOUR_SYNC_FIELD_TOO_LONG,
-                    extra={"field": source, "limit": limit},
-                )
-        setattr(model, target, value)
+def _modified(value):
+    # modifiedtime은 API가 전달한 14자리 날짜/시간을 DB DATETIME으로 바꾼다.
+    # created_at/updated_at과 달리 원본 수정 시각을 그대로 저장한다.
+    text = str(value)
+    if not re.fullmatch(r"[0-9]{14}", text):
+        raise BusinessException(
+            ErrorCode.TOUR_SYNC_INVALID_DATA,
+            extra={"field": "modifiedtime", "reason": "invalid_datetime"},
+        )
+    try:
+        # API 원본의 한국 현지 시각을 보존한다. DATETIME은 시간대 정보를 갖지 않는다.
+        return datetime.strptime(text, "%Y%m%d%H%M%S")
+    except ValueError as error:
+        raise BusinessException(
+            ErrorCode.TOUR_SYNC_INVALID_DATA,
+            extra={"field": "modifiedtime", "reason": "invalid_datetime"},
+        ) from error
+
+
+def _coordinate(value, field, bound):
+    # 지도 좌표는 float 오차를 피하기 위해 Decimal로 읽는다.
+    # 경도는 ±180, 위도는 ±90 범위만 허용한다.
+    if value in (None, ""):
+        return None
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as error:
+        raise BusinessException(
+            ErrorCode.TOUR_SYNC_INVALID_DATA,
+            extra={"field": field, "reason": "invalid_coordinate"},
+        ) from error
+    if not number.is_finite() or abs(number) > bound:
+        raise BusinessException(
+            ErrorCode.TOUR_SYNC_INVALID_DATA,
+            extra={"field": field, "reason": "coordinate_out_of_range"},
+        )
+    # events의 DECIMAL(10,7)은 정수부가 최대 세 자리다.
+    return number
+
+
+def _category(code):
+    # 참조 seed.sql의 코드 변환 순서. EV010500은 EV01의 하위 코드이므로
+    # 일반 축제보다 먼저 판별해야 계절행사로 분류된다.
+    if code == "EV010500":
+        return "계절행사"
+    if code.startswith("EV01"):
+        return "축제"
+    if code.startswith("EV02"):
+        return "공연"
+    if code == "EV030100":
+        return "전시"
+    if code.startswith("EV03"):
+        return "체험"
+    raise BusinessException(
+        ErrorCode.TOUR_SYNC_INVALID_DATA,
+        extra={"field": "lclsSystm3", "reason": "unknown_category", "value": code},
+    )
+
+
+def _fee(fee_text):
+    # 명확한 무료 표시만 있으면 0원/무료, 원 단위 금액이 있으면 최소값/유료.
+    # 시간이나 할인 조건처럼 금액을 알 수 없는 문구는 NULL로 두어 추측하지 않는다.
+    if not fee_text:
+        return None, None
+    if re.search(r"무료|입장료\s*없음", fee_text) and not re.search(r"유료|\d[\d,]*\s*원", fee_text):
+        return 0, True
+    amounts = [int(raw.replace(",", "")) for raw in re.findall(r"(\d[\d,]*)\s*원", fee_text)]
+    if amounts:
+        return min(amounts), False
+    if "유료" in fee_text:
+        return None, False
+    return None, None
 
 
 class TourSyncService:
-    # API에서 받은 목록과 상세 정보를 DB에 저장
+    # 같은 TourAPI contentid가 다시 들어오면 기존 Event 행을 갱신한다.
 
-    def __init__(self, api=None, engine=None, api_timezone=None):
-        self._api = api
-        self.engine = engine if engine is not None else db.engine
-        self.api_timezone = api_timezone or timezone(timedelta(hours=9))
+    def __init__(self, api=None, engine=None):
+        self._api = api  # 테스트에서는 가짜 API를 전달할 수 있음
+        self.engine = engine if engine is not None else db.engine  # 기본은 Flask 앱의 DB
 
     @property
     def api(self):
+        # 실제 API 클라이언트는 처음 호출할 때 만들어 설정 누락도 그때 검사한다.
         if self._api is None:
             self._api = TourAPI()
         return self._api
 
-    def _transaction(self, operation):
-        # 저장 성공하면 commit, 중간에 에러 나면 이번 저장은 rollback
+    @staticmethod
+    def _identity(item, requested=None):
+        # 축제 타입 15만 저장하며, 요청한 ID와 응답 ID가 다르면 다른 행사
+        # 정보가 섞일 수 있으므로 DB 작업 전에 거부한다.
+        if not isinstance(item, dict):
+            raise BusinessException(
+                ErrorCode.TOUR_SYNC_INVALID_DATA,
+                extra={"reason": "item_not_object"},
+            )
+        identifier = str(item.get("contentid", "")).strip()
+        if not identifier or len(identifier) > 20:
+            raise BusinessException(
+                ErrorCode.TOUR_SYNC_INVALID_DATA,
+                extra={"field": "contentid", "reason": "invalid_id"},
+            )
+        if requested is not None and identifier != requested:
+            raise BusinessException(ErrorCode.TOUR_SYNC_ID_MISMATCH)
+        if "contenttypeid" in item and str(item["contenttypeid"]) != "15":
+            raise BusinessException(
+                ErrorCode.TOUR_SYNC_INVALID_DATA,
+                extra={"field": "contenttypeid", "reason": "not_festival"},
+            )
+        return identifier
+
+    @staticmethod
+    def _assign(row, payload):
+        # TEXT_FIELDS의 API 필드만 Event 컬럼에 반영한다. 미전달 필드는
+        # 기존 값 유지, 명시적으로 전달된 빈 값은 NULL로 갱신한다.
+        for source, target in TEXT_FIELDS.items():
+            if source not in payload:
+                continue
+            value = _value(payload, source)
+            if value is not None and not isinstance(value, (str, int, float)):
+                raise BusinessException(
+                    ErrorCode.TOUR_SYNC_INVALID_DATA,
+                    extra={"field": source, "reason": "invalid_field_type"},
+                )
+            value = str(value) if value is not None else None
+            if value == "":
+                value = None
+            # 모델 컬럼의 nullable/길이를 그대로 사용해 DB 오류 전에 검증한다.
+            column = Event.__table__.columns[target]
+            if value is None and not column.nullable:
+                raise BusinessException(
+                    ErrorCode.TOUR_SYNC_REQUIRED_FIELD,
+                    extra={"field": source},
+                )
+            limit = getattr(column.type, "length", None)
+            if value is not None and limit and len(value) > limit:
+                raise BusinessException(
+                    ErrorCode.TOUR_SYNC_INVALID_DATA,
+                    extra={"field": source, "reason": "field_too_long", "limit": limit},
+                )
+            # 검증을 통과한 필드만 행에 반영한다.
+            setattr(row, target, value)
+
+    def _save(self, list_item, common, intro, require_existing=False):
+        # 목록과 두 상세가 모두 같은 contentid의 축제인지 먼저 검증한다.
+        identifier = self._identity(list_item)
+        for detail in (common, intro):
+            if not isinstance(detail, dict):
+                raise BusinessException(
+                    ErrorCode.TOUR_SYNC_INVALID_DATA,
+                    extra={"reason": "detail_not_object"},
+                )
+            if "contentid" in detail:
+                self._identity(
+                    {
+                        "contentid": detail["contentid"],
+                        "contenttypeid": detail.get("contenttypeid", "15"),
+                    },
+                    identifier,
+                )
+
+        # 같은 필드는 상세 응답을 우선한다. 아예 없는 필드는 _assign이 건너뛴다.
+        merged = {**list_item, **common, **intro}
+        # lDongRegnCd는 세종처럼 5자리로 올 수 있으므로 앞 두 자리만 사용.
+        code = str(merged.get("lclsSystm3") or list_item.get("lclsSystm3") or "").strip()
+        sido_code = str(merged.get("lDongRegnCd") or list_item.get("lDongRegnCd") or "")[:2]
+        if not re.fullmatch(r"[0-9]{2}", sido_code):
+            raise BusinessException(
+                ErrorCode.TOUR_SYNC_INVALID_DATA,
+                extra={"field": "lDongRegnCd", "reason": "invalid_sido", "value": sido_code},
+            )
+        category_name = _category(code)
+        # 상세 응답의 빈 분류/날짜가 목록의 유효한 값을 덮지 않도록 한다.
+        merged["lclsSystm3"] = code
+        for key in ("eventstartdate", "eventenddate"):
+            if not _value(merged, key) and _value(list_item, key):
+                merged[key] = list_item[key]
+
         try:
+            # 한 행사와 태그의 변경을 하나의 트랜잭션으로 묶는다.
+            # 아래 어느 검증이나 DB 작업이 실패해도 이 행사만 롤백된다.
             with Session(self.engine) as session, session.begin():
-                return operation(session)
+                # FK 기준값은 마이그레이션이 시드한다. 모르는 코드를
+                # 임의로 새 분류/지역으로 만들지 않는다.
+                category = session.scalar(select(Category).where(Category.name == category_name))
+                sido = session.get(Sido, sido_code)
+                if category is None or sido is None:
+                    raise BusinessException(
+                        ErrorCode.TOUR_SYNC_SEED_MISSING,
+                        extra={"category": category_name, "sido_code": sido_code},
+                    )
+                # 동일 콘텐츠를 재수집하면 행 잠금을 잡고 수정한다.
+                row = session.scalar(
+                    select(Event)
+                    .where(Event.tour_content_id == identifier)
+                    .with_for_update()
+                )
+                if row is None:
+                    # 상세 갱신 도중 원본 행이 삭제됐다면 목록 없이 새 행을 만들지 않는다.
+                    if require_existing:
+                        raise BusinessException(ErrorCode.TOUR_SYNC_CONTENT_CHANGED)
+                    row = Event(tour_content_id=identifier)
+                    session.add(row)
+                row.category_id, row.sido_code = category.id, sido_code
+                self._assign(row, merged)
+                if not row.title:
+                    raise BusinessException(
+                        ErrorCode.TOUR_SYNC_REQUIRED_FIELD,
+                        extra={"field": "title"},
+                    )
+                # 날짜는 문자열 컬럼과 달리 DATE로 변환하고 역전 여부를 확인한다.
+                for source, target in (("eventstartdate", "start_date"), ("eventenddate", "end_date")):
+                    if source in merged:
+                        setattr(row, target, _date(merged[source], source))
+                if row.start_date is None or row.end_date is None:
+                    raise BusinessException(
+                        ErrorCode.TOUR_SYNC_REQUIRED_FIELD,
+                        extra={"fields": ["eventstartdate", "eventenddate"]},
+                    )
+                if row.start_date > row.end_date:
+                    raise BusinessException(
+                        ErrorCode.TOUR_SYNC_INVALID_DATA,
+                        extra={"reason": "start_after_end"},
+                    )
+                row.is_permanent = (row.end_date - row.start_date).days > 90  # 90일 초과는 상설 표시
+                for source, target, bound in (("mapy", "latitude", 90), ("mapx", "longitude", 180)):
+                    if source in merged:
+                        setattr(row, target, _coordinate(_value(merged, source), source, bound))
+                if "modifiedtime" in merged:
+                    row.tour_modified_at = (
+                        _modified(merged["modifiedtime"])
+                        if _value(merged, "modifiedtime")
+                        else None
+                    )
+                # 요금이 새로 왔을 때만 대표 가격/무료 여부를 다시 계산한다.
+                if "usetimefestival" in merged:
+                    row.price, row.is_free = _fee(row.fee_text)
+                # 태그는 소개글을 실제로 받은 경우에만 교체한다.
+                if "overview" in merged:
+                    wanted = [name for name in TAG_KEYWORDS if name in (row.description or "")]
+                    tags = list(session.scalars(select(Tag).where(Tag.name.in_(wanted)))) if wanted else []
+                    if len(tags) != len(wanted):
+                        raise BusinessException(
+                            ErrorCode.TOUR_SYNC_SEED_MISSING,
+                            extra={"tags": wanted},
+                        )
+                    row.tags = tags  # 기존 연결을 새 소개글에 맞게 교체
+                # INSERT/UPDATE 및 태그 관계 변경을 이번 트랜잭션 안에서 실행한다.
+                session.flush()
+                return row.id
         except IntegrityError as error:
             raise BusinessException(ErrorCode.TOUR_SYNC_DB_CONFLICT) from error
 
-    def _common(self, row, item):
-        # 공통 정보와 좌표, 수정 시각을 DB 형식에 맞게 변환
-        item = with_district(item)
-        assign_fields(row, item, COMMON)
-        for source, target, bound in (("mapx", "map_x", 180), ("mapy", "map_y", 90)):
-            if source in item:
-                value = clean(item[source])
-                if value is not None:
-                    try:
-                        value = Decimal(str(value))
-                    except InvalidOperation as error:
-                        raise BusinessException(
-                            ErrorCode.TOUR_SYNC_INVALID_COORDINATE,
-                            extra={"field": source},
-                        ) from error
-                    if not value.is_finite() or abs(value) > bound:
-                        raise BusinessException(
-                            ErrorCode.TOUR_SYNC_COORDINATE_RANGE,
-                            extra={"field": source},
-                        )
-                setattr(row, target, value)
-        if "modifiedtime" in item:
-            value = clean(item["modifiedtime"])
-            if value is not None:
-                if not re.fullmatch(r"[0-9]{14}", str(value)):
-                    raise BusinessException(ErrorCode.TOUR_SYNC_INVALID_MODIFIED_TIME)
-                try:
-                    value = datetime.strptime(str(value), "%Y%m%d%H%M%S")
-                except ValueError as error:
-                    raise BusinessException(ErrorCode.TOUR_SYNC_INVALID_MODIFIED_TIME) from error
-                # UTC로 바꿔서 저장. MySQL DATETIME에는 시간대 정보가 안 들어감
-                value = (
-                    value.replace(tzinfo=self.api_timezone)
-                    .astimezone(timezone.utc)
-                    .replace(tzinfo=None)
-                )
-            row.api_modified_at = value
-
-    @staticmethod
-    def _dates(detail, item):
-        # 새로 받은 날짜만 바꾸고, 시작일과 종료일이 맞는지 확인
-        for source, target in (
-            ("eventstartdate", "event_start_date"),
-            ("eventenddate", "event_end_date"),
-        ):
-            if source in item:
-                setattr(detail, target, date_value(item[source]))
-        if detail.event_start_date is None or detail.event_end_date is None:
-            raise BusinessException(ErrorCode.TOUR_SYNC_DATES_REQUIRED)
-        if detail.event_start_date > detail.event_end_date:
-            raise BusinessException(ErrorCode.TOUR_SYNC_DATE_RANGE)
-
-    @staticmethod
-    def _identity(item, content_id=None, content_type=None):
-        # 요청한 콘텐츠가 맞는지 ID와 타입 확인
-        if not isinstance(item, dict):
-            raise BusinessException(ErrorCode.TOUR_SYNC_INVALID_ITEM)
-        identifier = str(item.get("contentid", "")).strip()
-        if not identifier or len(identifier) > 30:
-            raise BusinessException(ErrorCode.TOUR_SYNC_INVALID_ID)
-        raw_type = str(item.get("contenttypeid", ""))
-        if raw_type not in {"12", "14", "15"}:
-            raise BusinessException(ErrorCode.TOUR_INVALID_CONTENT_TYPE)
-        kind = int(raw_type)
-        if content_id is not None and identifier != content_id:
-            raise BusinessException(ErrorCode.TOUR_SYNC_ID_MISMATCH)
-        if content_type is not None and kind != content_type:
-            raise BusinessException(ErrorCode.TOUR_SYNC_TYPE_MISMATCH)
-        return identifier, kind
-
-    def save_list_item(self, item):
-        # 이미 있는 콘텐츠면 수정, 없으면 새로 저장
-        identifier, kind = self._identity(item)
-
-        def save(session):
-            # 저장하는 동안 다른 요청이 같은 행을 수정하지 못하게 잠금
-            row = session.scalar(
-                select(TourContent)
-                .where(TourContent.content_id == identifier)
-                .with_for_update()
-            )
-            if row is None:
-                row = TourContent(content_id=identifier, content_type_id=kind)
-                session.add(row)
-            elif row.content_type_id != kind:
-                raise BusinessException(ErrorCode.TOUR_SYNC_TYPE_MISMATCH)
-            if (
-                (kind == 15 and row.place_detail)
-                or (kind != 15 and row.festival_detail)
-            ):
-                raise BusinessException(ErrorCode.TOUR_SYNC_DETAIL_MISMATCH)
-            self._common(row, item)
-            if not row.title:
-                raise BusinessException(
-                    ErrorCode.TOUR_SYNC_REQUIRED_FIELD,
-                    extra={"field": "title"},
-                )
-            if kind == 15:
-                detail = row.festival_detail or FestivalDetail()
-                self._dates(detail, item)
-                row.festival_detail = detail
-            row.last_synced_at = utc_now()
-            session.flush()
-            return row.id
-
-        return self._transaction(save)
-
-    def _pages(self, endpoint, params):
-        try:
-            yield from iter_pages(self.api, endpoint, params)
-        except ValueError as error:
-            raise BusinessException(
-                ErrorCode.TOUR_API_INVALID_RESPONSE, extra={"endpoint": endpoint}
-            ) from error
-
-    @staticmethod
-    def _failure(report, scope, error):
-        # 메시지는 codes.py에서 가져오고, 필드명 같은 추가 정보는 따로 남김
-        report["failures"].append({
-            **scope,
-            "code": error.error_code.code,
-            "reason": error.message,
-            "extra": error.extra,
-        })
-
-    def sync_list(self, content_type_id, start_date=None, end_date=None):
-        # 충남 전체 목록 저장. 다시 실행해도 같은 콘텐츠는 중복으로 안 쌓임
-        if content_type_id not in (12, 14, 15):
-            raise BusinessException(ErrorCode.TOUR_INVALID_CONTENT_TYPE)
-        params = {"lDongRegnCd": CHUNGNAM_REGION_CODE, "arrange": "A"}
-        endpoint = "areaBasedList2"
-        if content_type_id == 15:
-            start_date, end_date = self.api.validate_festival_dates(start_date, end_date)
-            params.update(eventStartDate=start_date, eventEndDate=end_date)
-            endpoint = "searchFestival2"
-        else:
-            params["contentTypeId"] = content_type_id
-        report = {"saved": 0, "failures": [], "complete": False}
-        page = 0
-        scope = {
-            "region_code": CHUNGNAM_REGION_CODE,
-            "content_type_id": content_type_id,
-            "start_date": start_date,
-            "end_date": end_date,
-        }
-        try:
-            for page, items in self._pages(endpoint, params):
-                for item in items:
-                    try:
-                        self._identity(item, content_type=content_type_id)
-                        self.save_list_item(item)
-                        report["saved"] += 1
-                    except BusinessException as error:
-                        self._failure(
-                            report,
-                            {**scope, "page": page, "content_id": item.get("contentid")},
-                            error,
-                        )
-        except BusinessException as error:
-            self._failure(report, {**scope, "after_page": page}, error)
-        report["complete"] = not report["failures"]
-        return report
-
     def sync_detail(self, content_id):
-        # 상세 API 3개를 다 받은 뒤 한 번에 저장. 겹치는 값은 상세 정보로 갱신
+        # 이미 저장된 Event의 상세만 새로 받아 한 건을 갱신한다.
         identifier = str(content_id)
         with Session(self.engine) as session:
-            row = session.scalar(
-                select(TourContent).where(TourContent.content_id == identifier)
-            )
+            row = session.scalar(select(Event).where(Event.tour_content_id == identifier))
             if row is None:
                 raise BusinessException(ErrorCode.TOUR_SYNC_CONTENT_NOT_FOUND)
-            kind = row.content_type_id
-        # API부터 전부 조회. 중간에 실패하면 기존 DB는 건드리지 않음
-        payloads = {}
-        for endpoint in ("detailCommon2", "detailIntro2", "detailInfo2"):
-            params = {"contentId": identifier}
-            if endpoint != "detailCommon2":
-                params["contentTypeId"] = kind
-            payloads[endpoint] = [
-                item
-                for _, items in self._pages(endpoint, params)
-                for item in items
-            ]
-        for endpoint in ("detailCommon2", "detailIntro2"):
-            if len(payloads[endpoint]) != 1:
-                raise BusinessException(
-                    ErrorCode.TOUR_SYNC_INVALID_DETAIL,
-                    extra={"endpoint": endpoint},
-                )
-            item = payloads[endpoint][0]
-            self._identity(
-                {**item, "contenttypeid": item.get("contenttypeid", kind)},
-                identifier,
-                kind,
-            )
-        for item in payloads["detailInfo2"]:
-            if "contentid" in item and str(item["contentid"]) != identifier:
-                raise BusinessException(ErrorCode.TOUR_SYNC_ID_MISMATCH)
-
-        def save(session):
-            # 저장하는 동안 다른 요청이 같은 행을 수정하지 못하게 잠금
-            row = session.scalar(
-                select(TourContent)
-                .where(TourContent.content_id == identifier)
-                .with_for_update()
-            )
-            if row is None or row.content_type_id != kind:
-                raise BusinessException(ErrorCode.TOUR_SYNC_CONTENT_CHANGED)
-            if (
-                (kind == 15 and row.place_detail)
-                or (kind != 15 and row.festival_detail)
-            ):
-                raise BusinessException(ErrorCode.TOUR_SYNC_DETAIL_MISMATCH)
-            self._common(row, payloads["detailCommon2"][0])
-            intro = payloads["detailIntro2"][0]
-            if kind == 15:
-                detail = row.festival_detail or FestivalDetail()
-                self._dates(detail, intro)
-                assign_fields(detail, intro, FESTIVAL)
-                row.festival_detail = detail
-            else:
-                detail = row.place_detail or PlaceDetail()
-                assign_fields(detail, intro, PLACE[kind])
-                row.place_detail = detail
-            # 남은 정보도 나중에 쓸 수 있게 API별로 저장
-            detail.detail_data = {
-                **(detail.detail_data or {}),
-                "detailIntro2": intro,
-                "detailInfo2": payloads["detailInfo2"],
+            # 필수 분류·지역·기간은 상세 응답에 없을 수 있으므로 기존 값을 전달한다.
+            item = {
+                "contentid": identifier,
+                "contenttypeid": "15",
+                "title": row.title,
+                "lclsSystm3": row.lcls_code,
+                "lDongRegnCd": row.sido_code,
+                "eventstartdate": row.start_date.strftime("%Y%m%d"),
+                "eventenddate": row.end_date.strftime("%Y%m%d"),
             }
-            row.common_detail_synced_at = detail.last_synced_at = utc_now()
-            session.flush()
-            return row.id
+        return self._save(
+            item,
+            self.api.festival_common(identifier),
+            self.api.festival_intro(identifier),
+            require_existing=True,
+        )
 
-        return self._transaction(save)
-
-    def sync_details(self):
-        # 저장된 콘텐츠를 하나씩 돌면서 상세 정보 가져오기
-        with Session(self.engine) as session:
-            identifiers = list(session.scalars(
-                select(TourContent.content_id).order_by(TourContent.id)
-            ))
+    def sync_festivals(self, start_date=None, end_date=None):
+        # 전국 목록의 모든 페이지를 돌며 상세까지 수집한다.
+        # saved는 성공 건수, failures는 건별 오류, complete는 전체 성공 여부다.
         report = {
-            "selected": len(identifiers),
             "saved": 0,
             "failures": [],
             "complete": False,
         }
-        for identifier in identifiers:
-            try:
-                self.sync_detail(identifier)
-                report["saved"] += 1
-            except BusinessException as error:
-                self._failure(report, {"content_id": identifier}, error)
+        try:
+            for page, items in self.api.iter_festivals(start_date, end_date):
+                for item in items:
+                    identifier = item.get("contentid") if isinstance(item, dict) else None
+                    try:
+                        # API 조회는 트랜잭션 전에 끝낸다. 네트워크 지연 동안
+                        # DB 트랜잭션과 행 잠금을 길게 유지하지 않기 위해서다.
+                        identifier = self._identity(item)
+                        common = self.api.festival_common(identifier)
+                        intro = self.api.festival_intro(identifier)
+                        self._save(item, common, intro)
+                        report["saved"] += 1
+                    except BusinessException as error:
+                        # 건별 실패만 기록하고 다음 축제 수집은 계속한다.
+                        report["failures"].append({
+                            "page": page,
+                            "content_id": identifier,
+                            "code": error.error_code.code,
+                            "reason": error.message,
+                            "extra": error.extra,
+                        })
+        except BusinessException as error:
+            # 목록 페이지 자체가 실패하면 이후 페이지를 알 수 없으므로 종료한다.
+            report["failures"].append({
+                "page": None,
+                "content_id": None,
+                "code": error.error_code.code,
+                "reason": error.message,
+                "extra": error.extra,
+            })
         report["complete"] = not report["failures"]
         return report

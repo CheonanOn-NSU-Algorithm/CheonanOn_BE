@@ -22,3 +22,6 @@ class Config:
 
     # DB 접속 URL. .env의 SQLALCHEMY_DATABASE_URI 값을 그대로 사용
     SQLALCHEMY_DATABASE_URI = os.environ.get("SQLALCHEMY_DATABASE_URI")
+    # 풀에서 꺼낸 연결이 살아 있는지 확인한다. MySQL 재시작 후 남은 오래된 연결은
+    # 쿼리 실행 전에 교체한다. 실행 중 실패한 요청을 자동 재실행하는 옵션은 아니다.
+    SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}

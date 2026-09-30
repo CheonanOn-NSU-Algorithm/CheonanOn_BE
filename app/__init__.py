@@ -1,5 +1,6 @@
 from flask import Flask, jsonify  # Flask 앱 객체 생성, 에러 핸들러 응답용 jsonify
 from marshmallow import ValidationError
+from sqlalchemy.exc import DBAPIError, TimeoutError as DatabaseTimeoutError
 
 from app.config import Config  # JWT_SECRET_KEY, DB URI 등 환경설정 값을 담은 클래스
 
@@ -22,7 +23,7 @@ def create_app():
     migrate.init_app(app, db) # Alembic 마이그레이션이 이 app/db 조합을 쓰도록 연결
     jwt.init_app(app)         # JWT 인증 기능을 이 app에 연결
 
-    # 행사 Blueprint는 목록·상세 경로만 정의하고 기본 /api/v1/event 경로를 여기서 붙인다.
+    # 행사 Blueprint의 목록·상세·월간 순위·선택지 경로에 공통 URL을 붙인다.
     from app.api.events.routes import events_bp
 
     app.register_blueprint(events_bp, url_prefix="/api/v1/event")
@@ -45,7 +46,9 @@ def register_error_handlers(app: Flask):
        raise BusinessException(ErrorCode.그_멤버)만 하면 된다.
     3) HTTPException : 존재하지 않는 라우트(404), 잘못된 HTTP 메서드(405) 등
        Flask/Werkzeug가 라우팅 단계에서 자체적으로 던지는 예외.
-    4) Exception : 위 경우로 못 거른, 코드 버그나 외부 API 실패 등
+    4) DBAPIError/TimeoutError : DB 연결·풀·일시적 잠금 장애는 503으로 구분한다.
+       쿼리·권한 등 다른 DB 실행 오류는 기존 내부 오류(500)로 응답한다.
+    5) Exception : 위 경우로 못 거른, 코드 버그나 외부 API 실패 등
        예상 못한 모든 예외를 잡는 최종 안전망. 이게 없으면 이런 예외는
        그대로 500으로 터지면서 우리 공통 응답 포맷을 벗어난다."""
 
@@ -68,7 +71,33 @@ def register_error_handlers(app: Flask):
     def handle_http_exception(e: HTTPException):
         # 404, 405 같은 라우팅 단계 오류. ErrorCode가 없어서 CommonResponse.error()로는
         # 못 만들고, HTTPException이 이미 들고 있는 code/name/description으로 직접 구성한다.
-        return jsonify({"success": False, "code": e.name, "message": e.description}), e.code
+        # 원래 응답의 Allow(405) 등 프로토콜 헤더를 보존하고 본문만 JSON으로 바꾼다.
+        response = e.get_response()
+        response.set_data(app.json.dumps({
+            "success": False,
+            "code": e.name,
+            "message": e.description,
+        }))
+        response.content_type = "application/json"
+        return response
+
+    @app.errorhandler(DBAPIError)
+    @app.errorhandler(DatabaseTimeoutError)
+    def handle_database_error(e):
+        # MySQL 연결 수 초과(1040), 잠금 대기/교착(1205/1213), 접속·단절 오류를
+        # 일시적 사용 불가로 분류한다. 계정 권한·SQL·무결성 오류는 500으로 남긴다.
+        driver_args = getattr(getattr(e, "orig", None), "args", ())
+        driver_code = driver_args[0] if driver_args else None
+        error_code = (
+            ErrorCode.COMMON_DB_UNAVAILABLE
+            if isinstance(e, DatabaseTimeoutError)
+            or driver_code in (1040, 1205, 1213, 2002, 2003, 2005, 2006, 2013)
+            or getattr(e, "connection_invalidated", False)
+            else ErrorCode.COMMON_INTERNAL_ERROR
+        )
+        # SQL·접속 정보·원본 오류는 로그에서 확인하고 응답에는 공통 메시지만 보낸다.
+        app.logger.exception(e)
+        return jsonify(CommonResponse.error(error_code)), error_code.status_code
 
     @app.errorhandler(Exception)
     def handle_unexpected_exception(e: Exception):

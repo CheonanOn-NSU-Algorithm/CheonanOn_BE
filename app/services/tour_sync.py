@@ -133,7 +133,7 @@ def _category(code):
 
 
 def _fee(fee_text):
-    # 명확한 무료 표시만 있으면 0원/무료, 원 단위 금액이 있으면 최소값/유료.
+    # 대표 가격은 원 단위 금액의 최소값이다. 무료 표시 또는 0원만 안내하면 무료다.
     # 시간이나 할인 조건처럼 금액을 알 수 없는 문구는 NULL로 두어 추측하지 않는다.
     if not fee_text:
         return None, None
@@ -240,14 +240,15 @@ class TourSyncService:
                     ErrorCode.TOUR_SYNC_INVALID_DATA,
                     extra={"reason": "detail_not_object"},
                 )
-            if "contentid" in detail:
-                self._identity(
-                    {
-                        "contentid": detail["contentid"],
-                        "contenttypeid": detail.get("contenttypeid", "15"),
-                    },
-                    identifier,
-                )
+            # 상세 응답에 ID가 없어도 타입이 있다면 검증한다. ID 생략을 이유로
+            # 축제 이외의 콘텐츠 타입이 검증을 건너뛰고 저장되지 않도록 한다.
+            self._identity(
+                {
+                    "contentid": detail.get("contentid", identifier),
+                    "contenttypeid": detail.get("contenttypeid", "15"),
+                },
+                identifier,
+            )
 
         # 같은 필드는 상세 응답을 우선한다. 아예 없는 필드는 _assign이 건너뛴다.
         merged = {**list_item, **common, **intro}

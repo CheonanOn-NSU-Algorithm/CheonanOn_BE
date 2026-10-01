@@ -18,22 +18,17 @@ class User(db.Model):          # db.Model을 상속 → 이 클래스가 곧 'us
     profile_image = db.Column(db.String(500), nullable=True)       # 프로필 이미지 URL, 없어도 됨
 
 
-
-# 다른 모델에서도 사용할 수 있도록 클래스로 구현
-class TimestampMixin:
     # 레코드 생성 시각. default=lambda: ... 는 INSERT할 때 값이 없으면
     # 이 함수를 호출해 현재 UTC 시각을 자동으로 채워 넣으라는 뜻
-    created_at = db.Column(
-        db.DateTime,
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc)
+    created_at: datetime = db.Column(
+        db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )
 
     # 레코드 마지막 수정 시각. default는 최초 생성 시 created_at과 동일하게 채워지고,
     # onupdate=lambda: ... 는 이후 이 row가 UPDATE될 때마다 자동으로 현재 UTC 시각으로 갱신하라는 뜻
-    updated_at = db.Column(
+    updated_at: datetime = db.Column(
         db.DateTime,
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc)
+        onupdate=lambda: datetime.now(timezone.utc),
     )

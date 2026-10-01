@@ -1,4 +1,5 @@
 from flask import Flask, jsonify  # Flask 앱 객체 생성, 에러 핸들러 응답용 jsonify
+from marshmallow import ValidationError # 스키마 load() 검증 실패 시 발생하는 예외 (아래 핸들러에서 400으로 변환)
 
 from app.config import Config  # JWT_SECRET_KEY, DB URI 등 환경설정 값을 담은 클래스
 
@@ -13,6 +14,8 @@ from app.extensions import db, migrate, jwt  # DB/마이그레이션/JWT 확장 
 # 이 코드에서 직접 모델을 쓰지는 않지만, Flask-Migrate가 마이그레이션을 자동 생성할 때
 # db.Model을 상속한 클래스들이 이미 import되어 있어야 인식할 수 있기 때문에 필요하다.
 from app import models
+
+
 
 def create_app():
     app = Flask(__name__)
@@ -59,6 +62,17 @@ def register_error_handlers(app: Flask):
         # 404, 405 같은 라우팅 단계 오류. ErrorCode가 없어서 CommonResponse.error()로는
         # 못 만들고, HTTPException이 이미 들고 있는 code/name/description으로 직접 구성한다.
         return jsonify({"success": False, "code": e.name, "message": e.description}), e.code
+
+    @app.errorhandler(ValidationError)
+    def handle_validation_error(e: ValidationError):
+        # marshmallow 스키마의 load()가 실패하면(필수값 누락, 빈 문자열 등) 여기로 온다.
+        # 이 핸들러가 없으면 아래 Exception 핸들러로 떨어져서 클라이언트 실수인데도 500이 나간다.
+        # e.messages에 필드별 에러가 dict로 들어 있어서 extra로 그대로 내려준다.
+        # 예: {"success": false, "code": "COMMON_INVALID_INPUT", "message": "요청 값이 올바르지 않습니다.",
+        #      "errors": {"code": ["Missing data for required field."]}}
+        return jsonify(
+            CommonResponse.error(ErrorCode.COMMON_INVALID_INPUT, extra={"errors": e.messages})
+        ), ErrorCode.COMMON_INVALID_INPUT.status_code
 
     @app.errorhandler(Exception)
     def handle_unexpected_exception(e: Exception):

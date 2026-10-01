@@ -1,41 +1,99 @@
-# Marshmallow의 기본 Schema 클래스와
-# 데이터 타입을 정의할 때 사용하는 fields, 값의 범위를 검증할 때 사용하는 validate를 가져온다.
-from marshmallow import Schema, fields, validate
+# 리뷰 API의 요청 및 응답 형식을 정의하는 marshmallow 스키마.
+#
+# 모델 객체를 그대로 요청/응답에 사용하지 않고 스키마를 거치는 이유:
+#   요청 데이터의 형식과 필수값을 검증할 수 있다.
+#   응답에 노출할 필드만 명시할 수 있다.
+#   나중에 모델에 필드가 추가되어도 불필요한 데이터가 응답에 포함되는 것을 막을 수 있다.
 
-# 리뷰 생성(POST)에 사용할 데이터 형식을 정의하는 Schema
+from marshmallow import Schema, fields, validate, validates_schema, ValidationError
+
+
 class ReviewCreateSchema(Schema):
+    """리뷰 생성 요청용 스키마.
 
-    # 리뷰를 작성하는 사용자의 ID
-    # Integer → 정수형 데이터
-    # required=True → 반드시 요청 데이터에 포함되어야 함
+    POST /reviews 요청에서 전달되는 데이터를 검증한다.
+    """
+
+    # 리뷰를 작성한 사용자 ID
     user_id = fields.Integer(required=True)
 
-    # 리뷰를 작성할 축제/관광 콘텐츠의 ID
-    # 반드시 전달되어야 하는 값
+    # 리뷰를 작성할 관광 콘텐츠 ID
     tour_content_id = fields.Integer(required=True)
 
-    # 리뷰 평점
-    # 1~5 사이의 정수만 허용한다.
+    # 평점은 1점부터 5점까지만 허용한다.
     rating = fields.Integer(
         required=True,
-        validate=validate.Range(min=1, max=5)
+        validate=validate.Range(
+            min=1,
+            max=5,
+            error="평점은 1점에서 5점 사이여야 합니다."
+        )
     )
 
-    # 리뷰 내용
-    # 문자열(String) 형태이며 반드시 입력해야 한다.
-    content = fields.String(required=True)
+    # 리뷰 내용은 최소 1글자 이상 입력해야 한다.
+    content = fields.String(
+        required=True,
+        validate=validate.Length(
+            min=1,
+            error="리뷰 내용을 입력해주세요."
+        )
+    )
 
-# 리뷰 수정(PUT)에 사용할 데이터 형식을 정의하는 Schema
+
 class ReviewUpdateSchema(Schema):
+    """리뷰 수정 요청용 스키마.
 
-    # 수정할 평점
-    # required=False 평점을 수정하지 않아도 된다.
-    # 단, 값을 입력한다면 1~5 사이의 값이어야 한다.
+    PUT /reviews/{review_id} 요청에서 수정할 데이터를 검증한다.
+    수정하지 않는 필드는 생략할 수 있다.
+    """
+
+    # 평점은 수정하지 않을 수 있으며, 수정하는 경우 1~5점만 허용한다.
     rating = fields.Integer(
         required=False,
-        validate=validate.Range(min=1, max=5)
+        validate=validate.Range(
+            min=1,
+            max=5,
+            error="평점은 1점에서 5점 사이여야 합니다."
+        )
     )
 
-    # 수정할 리뷰 내용
-    # required=False 내용은 수정하지 않아도 된다.
-    content = fields.String(required=False)
+    # 리뷰 내용은 수정하지 않을 수 있으며, 수정하는 경우 최소 1글자 이상이어야 한다.
+    content = fields.String(
+        required=False,
+        validate=validate.Length(
+            min=1,
+            error="리뷰 내용을 입력해주세요."
+        )
+    )
+
+    @validates_schema
+    def validate_update(self, data, **kwargs):
+        # 수정할 필드가 하나도 없는 경우 요청을 거부한다.
+        if not data:
+            raise ValidationError("수정할 내용을 입력해주세요.")
+
+
+class ReviewResponseSchema(Schema):
+    """리뷰 응답용 스키마.
+
+    리뷰 객체에서 클라이언트에게 반환할 필드만 정의한다.
+    """
+
+    # 리뷰 식별자
+    id = fields.Integer()
+
+    # 리뷰 작성자 식별자
+    user_id = fields.Integer()
+
+    # 리뷰가 작성된 관광 콘텐츠 식별자
+    tour_content_id = fields.Integer()
+
+    # 리뷰 평점
+    rating = fields.Integer()
+
+    # 리뷰 내용
+    content = fields.String()
+
+    # 리뷰 생성 및 수정 시간
+    created_at = fields.DateTime()
+    updated_at = fields.DateTime()

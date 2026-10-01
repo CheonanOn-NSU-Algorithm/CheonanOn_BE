@@ -51,6 +51,20 @@ class ErrorCode(Enum):
     # access/refresh 토큰의 유효기간(exp)이 지나서 더 이상 사용할 수 없을 때.
     # 프론트에서는 이 code를 보고 리프레시 토큰으로 재발급을 시도하거나 재로그인시키면 된다.
     AUTH_TOKEN_EXPIRED = (401, "토큰이 만료되었습니다.")
+    # 서명이 안 맞거나(위조), 형식이 깨진 토큰
+    AUTH_TOKEN_INVALID = (401, "유효하지 않은 토큰입니다.")
+    # 로그아웃 등으로 TokenBlocklist에 등록된 토큰
+    AUTH_TOKEN_REVOKED = (401, "로그아웃된 토큰입니다.")
+
+    # --- KAKAO ---
+    # 프론트가 넘긴 인가 코드(code)로 카카오 토큰 발급에 실패한 경우.
+    # code는 일회용 + 약 10분 유효라서, 만료/재사용이 가장 흔한 원인이다.
+    # 프론트는 이 code를 받으면 카카오 로그인을 처음부터 다시 시작시키면 된다.
+    KAKAO_TOKEN_REQUEST_FAILED = (401, "카카오 인가 코드가 유효하지 않습니다.")
+
+    # --- USER ---
+    # 토큰은 유효하지만 해당 id의 유저가 DB에 없는 경우 (탈퇴 등).
+    USER_NOT_FOUND = (404, "사용자를 찾을 수 없습니다.")
 
     # --- INTERNAL_ERROR ---
     # BusinessException/HTTPException 어디에도 속하지 않는, 예상 못한 서버 내부 오류

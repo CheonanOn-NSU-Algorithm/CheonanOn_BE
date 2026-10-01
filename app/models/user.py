@@ -17,6 +17,7 @@ class User(db.Model):          # db.Model을 상속 → 이 클래스가 곧 'us
     nickname: str = db.Column(db.String(50), nullable=False)        # 닉네임, 필수값(nullable=False)
     profile_image = db.Column(db.String(500), nullable=True)       # 프로필 이미지 URL, 없어도 됨
 
+
     # 레코드 생성 시각. default=lambda: ... 는 INSERT할 때 값이 없으면
     # 이 함수를 호출해 현재 UTC 시각을 자동으로 채워 넣으라는 뜻
     created_at: datetime = db.Column(

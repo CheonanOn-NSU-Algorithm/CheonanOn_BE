@@ -53,6 +53,20 @@ class ErrorCode(Enum):
         self.status_code = status_code
         self.message = message
 
+    # --- REVIEW ---
+    #
+    # 리뷰 API에서 발생할 수 있는 예외 상황을 정의한다.
+    # 리뷰 조회, 수정, 삭제 과정에서 발생하는 오류를
+    # 공통 ErrorCode로 관리하여 일관된 응답을 반환할 수 있도록 한다.
+
+    # 요청한 리뷰가 DB에 존재하지 않는 경우.
+    # 리뷰 수정, 삭제 등 특정 리뷰를 대상으로 하는 요청에서 사용한다.
+    REVIEW_NOT_FOUND = (404, "리뷰를 찾을 수 없습니다.")
+
+    # 리뷰 작성자가 아닌 사용자가 해당 리뷰를 수정하거나 삭제하려는 경우.
+    # 현재 사용자의 user_id와 리뷰의 user_id를 비교하여 권한을 확인한다.
+    REVIEW_FORBIDDEN = (403, "리뷰를 수정하거나 삭제할 권한이 없습니다.")
+
     @property
     def code(self) -> str:
         # enum 멤버 이름(예: "AUTH_TOKEN_EXPIRED")을 그대로 응답의 code 값으로 사용.

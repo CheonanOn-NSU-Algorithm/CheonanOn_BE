@@ -1,4 +1,4 @@
-from flask import Flask, jsonify  # Flask 앱 객체 생성, 에러 핸들러 응답용 jsonify
+from flask import Flask, jsonify  # Flask 앱 객체 생성, 에러 핸들러 응답용
 from marshmallow import ValidationError  # 스키마 load() 검증 실패 시 발생하는 예외 (아래 핸들러에서 400으로 변환)
 
 from app.config import Config  # JWT_SECRET_KEY, DB URI 등 환경설정 값을 담은 클래스
@@ -8,10 +8,12 @@ from app.common_response import CommonResponse  # 공통 응답 반환
 from werkzeug.exceptions import HTTPException
 
 from app.extensions import db, migrate, jwt  # DB/마이그레이션/JWT 확장 객체 (app에 바인딩할 예정)
+
 # models 패키지를 import해서 User, TokenBlocklist 등 모델 클래스들을 로드시킴.
 # 이 코드에서 직접 모델을 쓰지는 않지만, Flask-Migrate가 마이그레이션을 자동 생성할 때
 # db.Model을 상속한 클래스들이 이미 import되어 있어야 인식할 수 있기 때문에 필요하다.
 from app import models
+
 
 def create_app():
     app = Flask(__name__)
@@ -36,6 +38,7 @@ def create_app():
 
     return app
 
+
 def register_blueprints(app: Flask):
     """모든 API 라우트를 앱에 등록한다.
 
@@ -49,6 +52,7 @@ def register_blueprints(app: Flask):
     from app.api import api_bp
 
     app.register_blueprint(api_bp)
+
 
 def register_error_handlers(app: Flask):
     """Spring Boot의 @RestControllerAdvice + @ExceptionHandler 역할.
@@ -69,7 +73,8 @@ def register_error_handlers(app: Flask):
        Flask/Werkzeug가 라우팅 단계에서 자체적으로 던지는 예외.
     3) Exception : 위 두 경우로 못 거른, 코드 버그나 외부 API 실패 등
        예상 못한 모든 예외를 잡는 최종 안전망. 이게 없으면 이런 예외는
-       그대로 500으로 터지면서 우리 공통 응답 포맷을 벗어난다."""
+       그대로 500으로 터지면서 우리 공통 응답 포맷을 벗어난다.
+    """
 
     @app.errorhandler(BusinessException)
     def handle_business_exception(e: BusinessException):
@@ -101,6 +106,7 @@ def register_error_handlers(app: Flask):
         # error()가 아니라 exception()을 써야 스택트레이스까지 로그에 남아서
         # 운영 중 500 에러의 원인을 코드 위치까지 추적할 수 있다.
         app.logger.exception(e)
+
         # 실제 원인(e)은 로그로만 남기고, 응답에는 노출하지 않는다.
         # 클라이언트에는 항상 동일한 일반 메시지(COMMON_INTERNAL_ERROR)만 내려준다.
         return jsonify(CommonResponse.error(ErrorCode.COMMON_INTERNAL_ERROR)), 500

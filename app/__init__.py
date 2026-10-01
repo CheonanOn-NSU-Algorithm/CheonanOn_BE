@@ -1,5 +1,5 @@
 from flask import Flask, jsonify  # Flask 앱 객체 생성, 에러 핸들러 응답용 jsonify
-from marshmallow import ValidationError  # 스키마 load() 실패를 공통 400 응답으로 변환
+from marshmallow import ValidationError  # 스키마 load() 검증 실패 시 발생하는 예외 (아래 핸들러에서 400으로 변환)
 from sqlalchemy.exc import DBAPIError, TimeoutError as DatabaseTimeoutError
 
 from app.config import Config  # JWT_SECRET_KEY, DB URI 등 환경설정 값을 담은 클래스
@@ -58,11 +58,12 @@ def register_error_handlers(app: Flask):
     @app.errorhandler를 자동으로 찾아 호출해주기 때문에, 등록 순서는 상관없다.
 
     아래 핸들러들은 "얼마나 예상된 예외인가" 순으로 안전망이 겹쳐 있다.
-    1) ValidationError : Marshmallow 스키마의 요청값 검증 실패. 필드별 사유는 fields에 담는다.
-    2) BusinessException : 우리가 의도적으로 raise하는 비즈니스 실패 케이스.
+    1) BusinessException : 우리가 의도적으로 raise하는 비즈니스 실패 케이스.
        새 실패 케이스가 생겨도 이 함수나 새 예외 클래스를 추가할 필요 없이
        app/errors/codes.py의 ErrorCode에 멤버 하나만 추가하고
        raise BusinessException(ErrorCode.그_멤버)만 하면 된다.
+    2) ValidationError : Marshmallow 스키마의 요청값 검증 실패.
+       400 COMMON_INVALID_INPUT과 필드별 errors를 응답한다.
     ※ JWT 관련 실패(토큰 없음/만료/위조/로그아웃됨)는 여기가 아니라
        app/jwt_callbacks.py의 콜백들이 처리한다.
     3) HTTPException : 존재하지 않는 라우트(404), 잘못된 HTTP 메서드(405) 등
@@ -73,20 +74,18 @@ def register_error_handlers(app: Flask):
        예상 못한 모든 예외를 잡는 최종 안전망. 이게 없으면 이런 예외는
        그대로 500으로 터지면서 우리 공통 응답 포맷을 벗어난다."""
 
-    @app.errorhandler(ValidationError)
-    def handle_validation_error(e: ValidationError):
-        # 필드별 검증 사유를 유지하면서 기존 공통 오류 형식으로 400을 응답한다.
-        body = CommonResponse.error(
-            ErrorCode.COMMON_INVALID_INPUT,
-            extra={"fields": e.messages},
-        )
-        return jsonify(body), 400
-
     @app.errorhandler(BusinessException)
     def handle_business_exception(e: BusinessException):
         # e.status_code / e.error_code 둘 다 BusinessException이 아니라 e.error_code(ErrorCode)에서
         # 정해진 값이다 (app/errors/exception.py, app/errors/codes.py 참고).
         return jsonify(CommonResponse.error(e.error_code, e.message, e.extra)), e.status_code
+
+    @app.errorhandler(ValidationError)
+    def handle_validation_error(e: ValidationError):
+        # develop의 검증 오류 계약: 필드별 사유를 errors에 담아 400으로 응답한다.
+        return jsonify(
+            CommonResponse.error(ErrorCode.COMMON_INVALID_INPUT, extra={"errors": e.messages})
+        ), ErrorCode.COMMON_INVALID_INPUT.status_code
 
     @app.errorhandler(HTTPException)
     def handle_http_exception(e: HTTPException):

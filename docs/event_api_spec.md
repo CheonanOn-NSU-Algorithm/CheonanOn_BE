@@ -135,14 +135,14 @@ GET /api/v1/event/monthly-top?month=2026-09&size=4
 | 503 | `COMMON_DB_UNAVAILABLE` | DB 접속·연결 풀·일시적인 잠금 장애 |
 | 500 | `COMMON_INTERNAL_ERROR` | 기타 DB 실행 오류·예상하지 못한 오류 |
 
-검증 오류는 `fields`에 필드별 사유를 담습니다.
+검증 오류는 인증 API와 동일하게 `errors`에 필드별 사유를 담습니다.
 
 ```json
 {
   "success": false,
   "code": "COMMON_INVALID_INPUT",
   "message": "요청 값이 올바르지 않습니다.",
-  "fields": { "page": ["Must be greater than or equal to 1 and less than or equal to 2147483647."] }
+  "errors": { "page": ["Must be greater than or equal to 1 and less than or equal to 2147483647."] }
 }
 ```
 

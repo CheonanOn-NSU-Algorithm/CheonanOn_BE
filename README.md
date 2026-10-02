@@ -170,7 +170,7 @@ Flask 앱 실행 후 `http://127.0.0.1:5000`에서 저장된 행사를 조회할
 | `GET /api/event` | 행사 목록·검색·필터·페이지 조회 |
 | `GET /api/event/<id>` | 상세 조회와 누적·일별 조회수 기록 (`events.id` 사용) |
 | `GET /api/event/monthly-top` | 전체 카테고리의 월간 조회수 상위 행사 (`month=YYYY-MM`, `size=1~20`) |
-| `GET /api/event/upcoming` | 한국 시간 기준 오늘부터 7일 동안 열리는 행사 (`page`, `size`) |
+| `GET /api/event/upcoming` | 한국 시간 기준 오늘부터 7일 동안 열리는 행사. 90일 초과 장기 행사 제외 (`page`, `size`) |
 | `GET /api/event/categories` | 카테고리 선택지 (`id`, `name`, `sortOrder`) |
 | `GET /api/event/sidos` | 시도 선택지 (`code`, `name`, `shortName`, `sortOrder`) |
 

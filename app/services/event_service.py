@@ -80,6 +80,8 @@ class EventService:
             conditions.append(Event.sido_code == query["sido_code"])
         if query["is_free"] is not None:
             conditions.append(Event.is_free == query["is_free"])
+        if query.get("is_permanent") is not None:
+            conditions.append(Event.is_permanent == query["is_permanent"])
         if query["start_date"] is not None:
             conditions.append(Event.end_date >= query["start_date"])
         if query["end_date"] is not None:
@@ -135,7 +137,8 @@ class EventService:
     @staticmethod
     def upcoming_events(query, today=None):
         # 한국 시간의 오늘을 포함해 7일째 되는 날까지 조회한다.
-        # 행사가 이 기간과 하루라도 겹치면 포함하므로 이미 진행 중인 행사도 보인다.
+        # 행사가 이 기간과 하루라도 겹치면 포함하되, 90일 초과 장기 행사는 제외한다.
+        # 따라서 오늘도 열리는 단기 행사는 시작일이 지났어도 목록에 보인다.
         start_date = today or datetime.now(KST).date()
         end_date = start_date + timedelta(days=6)
 
@@ -144,6 +147,7 @@ class EventService:
             "category_id": None,
             "sido_code": None,
             "is_free": None,
+            "is_permanent": False,
             "start_date": start_date,
             "end_date": end_date,
             "q": None,

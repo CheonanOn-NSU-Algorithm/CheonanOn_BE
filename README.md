@@ -167,18 +167,20 @@ Flask 앱 실행 후 `http://127.0.0.1:5000`에서 저장된 행사를 조회할
 
 | 경로 | 설명 |
 |---|---|
-| `GET /api/v1/event` | 행사 목록·검색·필터·페이지 조회 |
-| `GET /api/v1/event/<id>` | 상세 조회와 누적·일별 조회수 기록 (`events.id` 사용) |
-| `GET /api/v1/event/monthly-top` | 월간 조회수 상위 축제 조회 (`month=YYYY-MM`, `size=1~20`) |
-| `GET /api/v1/event/categories` | 카테고리 선택지 (`id`, `name`, `sortOrder`) |
-| `GET /api/v1/event/sidos` | 시도 선택지 (`code`, `name`, `shortName`, `sortOrder`) |
+| `GET /api/event` | 행사 목록·검색·필터·페이지 조회 |
+| `GET /api/event/<id>` | 상세 조회와 누적·일별 조회수 기록 (`events.id` 사용) |
+| `GET /api/event/monthly-top` | 전체 카테고리의 월간 조회수 상위 행사 (`month=YYYY-MM`, `size=1~20`) |
+| `GET /api/event/upcoming` | 한국 시간 기준 오늘부터 7일 동안 열리는 행사 (`page`, `size`) |
+| `GET /api/event/categories` | 카테고리 선택지 (`id`, `name`, `sortOrder`) |
+| `GET /api/event/sidos` | 시도 선택지 (`code`, `name`, `shortName`, `sortOrder`) |
 
 목록 조건은 `q`, `category_id`, `sido_code`, `is_free=true|false`, `start_date`·`end_date`(`YYYY-MM-DD`), `sort=latest|popular|dateAsc`, `page`(기본 1), `size`(기본 20, 최대 100)입니다. 기간은 행사가 하루라도 겹치면 포함합니다. `popular`는 누적 조회수, `monthly-top`은 해당 월의 일별 조회수 합계 기준입니다.
 
 ```text
-GET /api/v1/event?q=축제&sido_code=44&page=1&size=20
-GET /api/v1/event/1
-GET /api/v1/event/monthly-top?month=2026-09&size=4
+GET /api/event?q=축제&sido_code=44&page=1&size=20
+GET /api/event/1
+GET /api/event/monthly-top?month=2026-09&size=4
+GET /api/event/upcoming?page=1&size=20
 ```
 
 목록 `data`에는 `totalCount`, `page`, `size`, `events`가 들어갑니다. 선택지의 `data`는 배열이며, 선택한 카테고리 `id`와 시도 `code`를 목록 조건에 사용합니다. 상세 GET은 한국 날짜 기준 일별 조회수를 기록합니다. 잘못된 입력은 400, 없는 행사 ID는 404, 일시적인 DB 장애는 503으로 응답합니다. 요청·응답 필드와 오류 예시는 [행사 API 명세서](docs/event_api_spec.md)를 확인하세요.

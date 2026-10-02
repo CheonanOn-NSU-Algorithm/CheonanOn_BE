@@ -51,14 +51,12 @@ class EventService:
             .subquery()
         )
 
-        # 월간 기록이 있는 '축제' 분류만 순위에 넣는다. 월간 합계가 같으면
-        # 행사 ID 내림차순으로 고정해 페이지를 새로 열어도 순서가 바뀌지 않는다.
+        # 카테고리와 관계없이 해당 월에 조회수 기록이 있는 모든 행사를
+        # 순위에 넣는다. 월간 합계가 같으면 행사 ID 내림차순으로 고정한다.
         statement = (
             select(Event, monthly_views.c.monthly_views)
             .join(monthly_views, monthly_views.c.event_id == Event.id)
-            .join(Event.category)
             .options(joinedload(Event.category), joinedload(Event.sido))
-            .where(Category.name == "축제")
             .order_by(monthly_views.c.monthly_views.desc(), Event.id.desc())
             .limit(query["size"])
         )
@@ -133,6 +131,26 @@ class EventService:
             "size": size,
             "events": events,
         }
+
+    @staticmethod
+    def upcoming_events(query, today=None):
+        # 한국 시간의 오늘을 포함해 7일째 되는 날까지 조회한다.
+        # 행사가 이 기간과 하루라도 겹치면 포함하므로 이미 진행 중인 행사도 보인다.
+        start_date = today or datetime.now(KST).date()
+        end_date = start_date + timedelta(days=6)
+
+        # 목록 API의 기간 교집합 조건과 페이지 처리를 재사용한다. 날짜순으로 반환한다.
+        return EventService.list_events({
+            "category_id": None,
+            "sido_code": None,
+            "is_free": None,
+            "start_date": start_date,
+            "end_date": end_date,
+            "q": None,
+            "sort": "dateAsc",
+            "page": query["page"],
+            "size": query["size"],
+        })
 
     @staticmethod
     def get_event(event_id, today=None, request_method="GET"):

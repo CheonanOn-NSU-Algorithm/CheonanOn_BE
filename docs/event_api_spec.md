@@ -4,17 +4,18 @@
 
 | 경로 | 기능 |
 |---|---|
-| `GET /api/v1/event` | 행사 목록·검색·필터·페이지 조회 |
-| `GET /api/v1/event/<id>` | 행사 상세 조회와 조회수 기록 |
-| `GET /api/v1/event/monthly-top` | 월간 조회수 상위 축제 |
-| `GET /api/v1/event/categories` | 카테고리 선택지 |
-| `GET /api/v1/event/sidos` | 시도 선택지 |
+| `GET /api/event` | 행사 목록·검색·필터·페이지 조회 |
+| `GET /api/event/<id>` | 행사 상세 조회와 조회수 기록 |
+| `GET /api/event/monthly-top` | 전체 카테고리의 월간 조회수 상위 행사 |
+| `GET /api/event/upcoming` | 오늘부터 7일 동안 열리는 행사 |
+| `GET /api/event/categories` | 카테고리 선택지 |
+| `GET /api/event/sidos` | 시도 선택지 |
 
 정의되지 않은 쿼리 키와 동일한 키의 반복은 `400 COMMON_INVALID_INPUT`입니다. 상세·선택지 API에는 쿼리 파라미터를 붙이지 않습니다. 사용하지 않는 필터는 빈 문자열로 보내지 말고 생략합니다. `HEAD`는 조회수를 기록하지 않으며 `OPTIONS`는 Flask가 허용 메서드를 안내합니다.
 
 ## 1. 행사 목록
 
-`GET /api/v1/event`
+`GET /api/event`
 
 | 이름 | 형식 | 기본값 | 설명 |
 |---|---|---|---|
@@ -31,7 +32,7 @@
 두 날짜를 함께 보내면 조회 기간과 하루라도 겹치는 행사를 찾습니다. 시작일이 종료일보다 늦으면 400입니다. `latest`·`popular`의 동률은 행사 ID 내림차순, `dateAsc`의 동률은 ID 오름차순입니다. `popular`는 `events.view_count` 누적값을 사용합니다. 존재하지 않는 카테고리·시도 ID는 정상적인 빈 결과입니다.
 
 ```http
-GET /api/v1/event?q=축제&sido_code=44&page=1&size=20
+GET /api/event?q=축제&sido_code=44&page=1&size=20
 ```
 
 ```json
@@ -66,25 +67,25 @@ GET /api/v1/event?q=축제&sido_code=44&page=1&size=20
 
 ## 2. 행사 상세
 
-`GET /api/v1/event/<id>`의 `id`는 TourAPI의 `contentid`가 아닌 목록 카드의 `events.id`입니다. 1~2,147,483,647을 허용합니다. 범위 안의 없는 ID는 `404 EVENT_NOT_FOUND`입니다.
+`GET /api/event/<id>`의 `id`는 TourAPI의 `contentid`가 아닌 목록 카드의 `events.id`입니다. 1~2,147,483,647을 허용합니다. 범위 안의 없는 ID는 `404 EVENT_NOT_FOUND`입니다.
 
 상세 `data`에는 목록 카드의 필드와 `description`, `address`, `addressDetail`, `playTime`, `feeText`, `imageUrl`, `latitude`, `longitude`, `organizer`, `contactPhone`, `homepageUrl`, `isPermanent`가 들어갑니다. 정보가 없는 선택 필드는 `null`입니다.
 
 정상적인 상세 GET마다 `events.view_count`와 한국 날짜의 `event_daily_views.view_count`가 각각 1씩 증가합니다. 같은 사용자의 반복 조회도 매번 집계합니다. 목록·선택지·월간 순위·HEAD·OPTIONS와 없는 행사 조회는 집계하지 않습니다. 두 집계는 한 트랜잭션으로 저장하며 실패하면 모두 롤백합니다. MySQL에서는 행사 행 잠금으로 같은 행사에 대한 동시 요청을 순차 처리합니다. 조회수 기록은 `events.updated_at`을 바꾸지 않습니다. DB 저장 후 응답 전달이 실패해도 해당 조회는 집계될 수 있습니다.
 
-## 3. 월간 최고의 축제
+## 3. 월간 인기 행사
 
-`GET /api/v1/event/monthly-top`
+`GET /api/event/monthly-top`
 
 | 이름 | 형식 | 기본값 | 설명 |
 |---|---|---|---|
 | `month` | `YYYY-MM` | 한국 시간 기준 이번 달 | 조회할 달 |
-| `size` | 1~20의 정수 | `4` | 반환할 축제 수 |
+| `size` | 1~20의 정수 | `4` | 반환할 행사 수 |
 
-선택한 달의 일별 조회수를 행사별로 합산합니다. `categories.name`이 `축제`이고 해당 월 합계가 1 이상인 행사만 조회수 내림차순으로 반환합니다. 동률은 행사 ID 내림차순입니다. 행사 진행 기간은 순위 조건이 아닙니다. 일별 조회수 기록이 없으면 빈 배열입니다. 과거 누적 조회수를 일별 조회수로 복원하지 않습니다.
+선택한 달의 일별 조회수를 행사별로 합산합니다. 카테고리와 관계없이 해당 월 합계가 1 이상인 행사를 조회수 내림차순으로 반환합니다. 동률은 행사 ID 내림차순입니다. 행사 진행 기간은 순위 조건이 아닙니다. 일별 조회수 기록이 없으면 빈 배열입니다. 과거 누적 조회수를 일별 조회수로 복원하지 않습니다.
 
 ```http
-GET /api/v1/event/monthly-top?month=2026-09&size=4
+GET /api/event/monthly-top?month=2026-09&size=4
 ```
 
 ```json
@@ -116,15 +117,28 @@ GET /api/v1/event/monthly-top?month=2026-09&size=4
 
 `monthlyViews`는 해당 월의 조회수이며 목록의 `sort=popular`에서 사용하는 누적 조회수와 다릅니다.
 
-## 4. 카테고리·시도 선택지
+## 4. 오늘부터 7일 동안 열리는 행사
 
-`GET /api/v1/event/categories`는 `sort_order`, `id` 오름차순의 `{ "id", "name", "sortOrder" }` 배열을 `data`에 반환합니다.
+`GET /api/event/upcoming?page=1&size=20`
 
-`GET /api/v1/event/sidos`는 `sort_order`, `code` 오름차순의 `{ "code", "name", "shortName", "sortOrder" }` 배열을 `data`에 반환합니다. 예: `{ "code": "44", "name": "충청남도", "shortName": "충남", "sortOrder": 5 }`.
+요청 시점의 한국 날짜를 오늘로 계산합니다. 오늘부터 6일 뒤까지 총 7일 중 하루라도 겹치는 모든 카테고리의 행사를 반환합니다. 이미 시작했지만 오늘 이후에도 열리는 행사와 마지막 날에 시작하는 행사도 포함합니다. 행사 시작일 오름차순이며 같은 날짜는 행사 ID 오름차순입니다.
+
+| 이름 | 형식 | 기본값 | 설명 |
+|---|---|---|---|
+| `page` | 1~2,147,483,647의 정수 | `1` | 페이지 번호 |
+| `size` | 1~100의 정수 | `20` | 페이지당 행사 수 |
+
+응답 `data`는 행사 목록과 같은 `totalCount`, `page`, `size`, `events` 형식입니다. 이 기간은 매 요청마다 계산하며 12시간 간격의 TourAPI 수집은 DB 데이터의 최신화에만 사용합니다. 별도 테이블은 필요하지 않습니다.
+
+## 5. 카테고리·시도 선택지
+
+`GET /api/event/categories`는 `sort_order`, `id` 오름차순의 `{ "id", "name", "sortOrder" }` 배열을 `data`에 반환합니다.
+
+`GET /api/event/sidos`는 `sort_order`, `code` 오름차순의 `{ "code", "name", "shortName", "sortOrder" }` 배열을 `data`에 반환합니다. 예: `{ "code": "44", "name": "충청남도", "shortName": "충남", "sortOrder": 5 }`.
 
 카테고리 `id`와 시도 `code`를 목록 조회의 `category_id`, `sido_code`에 각각 전달합니다. 전체를 선택한 경우 해당 조건을 생략합니다. 기준 테이블이 비면 빈 배열을 반환하며 선택지 조회는 행사 조회수를 증가시키지 않습니다.
 
-## 5. 오류 응답
+## 6. 오류 응답
 
 | 상태 | code | 원인 |
 |---|---|---|

@@ -14,6 +14,7 @@ from app.schemas.events import (
     MonthlyTopQuerySchema,
     MonthlyTopResponseSchema,
     SidoOptionSchema,
+    UpcomingEventQuerySchema,
 )
 from app.services.event_service import EventService
 
@@ -55,6 +56,15 @@ def monthly_top_events():
     query = MonthlyTopQuerySchema().load(request.args)
     result = EventService.monthly_top(query)
     data = MonthlyTopResponseSchema().dump(result)
+    return jsonify(CommonResponse.success(data)), 200
+
+
+@events_bp.get("/upcoming")
+def upcoming_events():
+    # 요청 시점의 한국 날짜를 기준으로 오늘부터 7일 동안 열리는 행사를 조회한다.
+    query = UpcomingEventQuerySchema().load(request.args)
+    result = EventService.upcoming_events(query)
+    data = EventListResponseSchema().dump(result)
     return jsonify(CommonResponse.success(data)), 200
 
 

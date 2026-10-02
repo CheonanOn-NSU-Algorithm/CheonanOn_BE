@@ -134,6 +134,15 @@ class EventListResponseSchema(Schema):
     events = fields.List(fields.Nested(EventCardSchema))
 
 
+class UpcomingEventQuerySchema(QuerySchema):
+    # 조회 기간은 서버가 한국 시간으로 결정한다. 클라이언트는 페이지 크기와 번호만 지정한다.
+    page = fields.Integer(
+        load_default=1,
+        validate=validate.Range(min=1, max=2_147_483_647),
+    )
+    size = fields.Integer(load_default=20, validate=validate.Range(min=1, max=100))
+
+
 class MonthlyTopQuerySchema(QuerySchema):
     # 월을 생략하면 한국 시간 기준 현재 달을 사용한다. 카드 개수는 최대 20개다.
     month = fields.Date(format="%Y-%m", load_default=None)

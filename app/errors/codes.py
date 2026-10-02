@@ -41,6 +41,12 @@ class ErrorCode(Enum):
     TOUR_SYNC_CONTENT_CHANGED = (409, "상세 수집 중 행사 정보가 삭제되었습니다.")
     TOUR_SYNC_DB_CONFLICT = (409, "DB 저장 중 무결성 충돌이 발생했습니다.")
     TOUR_SYNC_SEED_MISSING = (500, "카테고리·시도·태그 기준 데이터가 없습니다.")
+    # 전체 수집은 계속 진행했지만 report.failures가 남은 경우. 이때는 마지막
+    # 성공 시각을 갱신하지 않고, 실패한 content ID와 원래 오류 코드를 로그에 남긴다.
+    TOUR_SYNC_INCOMPLETE = (500, "축제 데이터를 모두 갱신하지 못했습니다.")
+    # 예약 스레드에서 DB 상태 조회·저장 등 예상 못한 예외가 발생한 경우.
+    # 상세 traceback은 로그에만 남기고 다음 주기에 다시 시도한다.
+    TOUR_SYNC_SCHEDULE_FAILED = (500, "정기 축제 갱신 중 오류가 발생했습니다.")
 
     # --- AUTH ---
     # 로그인 자체가 안 됐거나 인증 수단이 아예 없는 등, 원인을 세분화하지 않은 일반 인증 실패.

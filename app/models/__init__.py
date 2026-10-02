@@ -12,10 +12,13 @@ from app.models.user import User                      # User 모델을 이 패�
 from app.models.token_blocklist import TokenBlocklist  # TokenBlocklist 모델을 이 패키지 네임스페이스로 노출
 
 # 이 모듈에 모델 클래스를 import해야 Flask-Migrate가 테이블을 인식한다.
-# User/TokenBlocklist는 기존 인증 도메인이고, 아래 여섯 클래스는 행사 도메인이다.
+# User/TokenBlocklist는 기존 인증 도메인이고, 행사 모델 여섯 개와
+# 예약 상태 모델 하나는 축제 조회·갱신 도메인에서 사용한다.
 from app.models.tour_content import Category, Sido, Event, Tag, EventTag, EventDailyView
+# 예약 상태도 모델 메타데이터에 등록해야 Alembic이 테이블을 인식한다.
+from app.models.tour_sync_state import TourSyncState
 
 # `__all__`은 `from app.models import *`를 사용할 때 외부로 내보낼 이름 목록이다.
 # 모델 등록 자체에는 위 import만 필요하므로 필수는 아니지만, 공개할 모델을
 # 명시하고 내부의 db/헬퍼 이름이 실수로 노출되지 않도록 유지한다.
-__all__ = ["User", "TokenBlocklist", "Category", "Sido", "Event", "Tag", "EventTag", "EventDailyView"]
+__all__ = ["User", "TokenBlocklist", "Category", "Sido", "Event", "Tag", "EventTag", "EventDailyView", "TourSyncState"]

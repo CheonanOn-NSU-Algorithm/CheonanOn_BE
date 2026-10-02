@@ -16,8 +16,8 @@
 #   /api  +  /auth   +  /refresh  →  POST /api/auth/refresh   토큰 재발급
 #   /api  +  /auth   +  /logout   →  POST /api/auth/logout    로그아웃
 #   /api  +  /users  +  /me       →  GET  /api/users/me       내 정보 조회
-#   /api  +  /v1/event + /       →  GET  /api/v1/event         행사 목록
-#   /api  +  /v1/event + /<id>   →  GET  /api/v1/event/<id>    행사 상세
+#   /api  +  /event + /       →  GET  /api/event         행사 목록
+#   /api  +  /event + /<id>   →  GET  /api/event/<id>    행사 상세
 #   ※ 그래서 자식 Blueprint(auth_bp, users_bp)의 url_prefix에는 "/api"를 다시 쓰면 안 된다.
 #     (쓰면 /api/api/auth/... 가 된다)
 #
@@ -40,4 +40,4 @@ api_bp = Blueprint("api", __name__, url_prefix="/api")
 # 자식 Blueprint들을 부모에 붙인다. 등록 순서는 상관없다.
 api_bp.register_blueprint(auth_bp)
 api_bp.register_blueprint(users_bp)
-api_bp.register_blueprint(events_bp, url_prefix="/v1/event")
+api_bp.register_blueprint(events_bp, url_prefix="/event")

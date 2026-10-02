@@ -18,7 +18,7 @@ from app.schemas.events import (
 from app.services.event_service import EventService
 
 
-# 앱 팩토리에서 /api/v1/event를 붙인다. 여기에는 행사별 경로만 정의한다.
+# 앱 팩토리에서 /api/event를 붙인다. 여기에는 행사별 경로만 정의한다.
 events_bp = Blueprint("events", __name__)
 
 

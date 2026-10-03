@@ -61,6 +61,9 @@ class EventService:
             .limit(query["size"])
         )
         rows = db.session.execute(statement).all()
+        # 해당 월에 조회된 행사가 없으면 클라이언트에 행사 없음 오류를 알린다.
+        if not rows:
+            raise BusinessException(ErrorCode.EVENT_NOT_FOUND)
         return {
             "month": f"{month.year:04d}-{month.month:02d}",
             "events": [
@@ -70,22 +73,20 @@ class EventService:
         }
 
     @staticmethod
-    def list_events(query, include_past=False, today=None):
+    def list_events(query, include_past=False):
         # 요청에 있는 필터만 SQL 조건에 추가한다. 태그 검색은 EXISTS를 사용해
         # 태그가 여러 개 맞아도 한 행사가 중복되거나 totalCount가 부풀지 않게 한다.
         conditions = []
         if not include_past:
             # 기본 목록은 한국 시간의 오늘까지 진행되는 행사부터 보여준다.
             # 종료일을 기준으로 하므로 어제 시작했어도 오늘 열리면 포함한다.
-            conditions.append(Event.end_date >= (today or datetime.now(KST).date()))
+            conditions.append(Event.end_date >= datetime.now(KST).date())
         if query["category_id"] is not None:
             conditions.append(Event.category_id == query["category_id"])
         if query["sido_code"] is not None:
             conditions.append(Event.sido_code == query["sido_code"])
         if query["is_free"] is not None:
             conditions.append(Event.is_free == query["is_free"])
-        if query.get("is_permanent") is not None:
-            conditions.append(Event.is_permanent == query["is_permanent"])
         if query["start_date"] is not None:
             conditions.append(Event.end_date >= query["start_date"])
         if query["end_date"] is not None:
@@ -131,34 +132,15 @@ class EventService:
             .limit(size)
         )
         events = db.session.scalars(statement).all()
+        # 검색 결과가 없거나 요청 페이지가 범위를 넘으면 빈 목록 대신 404를 반환한다.
+        if not events:
+            raise BusinessException(ErrorCode.EVENT_NOT_FOUND)
         return {
             "total_count": total_count,
             "page": page,
             "size": size,
             "events": events,
         }
-
-    @staticmethod
-    def upcoming_events(query, today=None):
-        # 한국 시간의 오늘을 포함해 7일째 되는 날까지 조회한다.
-        # 행사가 이 기간과 하루라도 겹치면 포함하되, 90일 초과 장기 행사는 제외한다.
-        # 따라서 오늘도 열리는 단기 행사는 시작일이 지났어도 목록에 보인다.
-        start_date = today or datetime.now(KST).date()
-        end_date = start_date + timedelta(days=6)
-
-        # 목록 API의 기간 교집합 조건과 페이지 처리를 재사용한다. 날짜순으로 반환한다.
-        return EventService.list_events({
-            "category_id": None,
-            "sido_code": None,
-            "is_free": None,
-            "is_permanent": False,
-            "start_date": start_date,
-            "end_date": end_date,
-            "q": None,
-            "sort": "dateAsc",
-            "page": query["page"],
-            "size": query["size"],
-        }, today=start_date)
 
     @staticmethod
     def get_event(event_id, today=None, request_method="GET"):

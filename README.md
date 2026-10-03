@@ -171,7 +171,6 @@ Flask 앱 실행 후 `http://127.0.0.1:5000`에서 저장된 행사를 조회할
 | `GET /api/event/all` | 지난 행사까지 포함한 전체 목록·검색·필터·페이지 조회 |
 | `GET /api/event/<id>` | 상세 조회와 누적·일별 조회수 기록 (`events.id` 사용) |
 | `GET /api/event/monthly-top` | 전체 카테고리의 월간 조회수 상위 행사 (`month=YYYY-MM`, `size=1~20`) |
-| `GET /api/event/upcoming` | 한국 시간 기준 오늘부터 7일 동안 열리는 행사. 90일 초과 장기 행사 제외 (`page`, `size`) |
 | `GET /api/event/categories` | 카테고리 선택지 (`id`, `name`, `sortOrder`) |
 | `GET /api/event/sidos` | 시도 선택지 (`code`, `name`, `shortName`, `sortOrder`) |
 
@@ -182,7 +181,6 @@ GET /api/event?q=축제&sido_code=44&page=1&size=20
 GET /api/event/all?end_date=2025-12-31&page=1&size=20
 GET /api/event/1
 GET /api/event/monthly-top?month=2026-09&size=4
-GET /api/event/upcoming?page=1&size=20
 ```
 
-목록 `data`에는 `totalCount`, `page`, `size`, `events`가 들어갑니다. 선택지의 `data`는 배열이며, 선택한 카테고리 `id`와 시도 `code`를 목록 조건에 사용합니다. 상세 GET은 한국 날짜 기준 일별 조회수를 기록합니다. 잘못된 입력은 400, 없는 행사 ID는 404, 일시적인 DB 장애는 503으로 응답합니다. 요청·응답 필드와 오류 예시는 [행사 API 명세서](docs/event_api_spec.md)를 확인하세요.
+목록 `data`에는 `totalCount`, `page`, `size`, `events`가 들어갑니다. 선택지의 `data`는 배열이며, 선택한 카테고리 `id`와 시도 `code`를 목록 조건에 사용합니다. 상세 GET은 한국 날짜 기준 일별 조회수를 기록합니다. 잘못된 입력은 400, 없는 행사 ID나 빈 행사 목록·월간 순위는 `404 EVENT_NOT_FOUND`, 일시적인 DB 장애는 503으로 응답합니다. 요청·응답 필드와 오류 예시는 [행사 API 명세서](docs/event_api_spec.md)를 확인하세요.

@@ -21,8 +21,8 @@ class ErrorCode(Enum):
     COMMON_DB_UNAVAILABLE = (503, "데이터베이스를 사용할 수 없습니다. 잠시 후 다시 시도해주세요.")
 
     # --- EVENT ---
-    # 행사 상세 URL에 해당하는 ID가 없을 때 사용한다.
-    EVENT_NOT_FOUND = (404, "존재하지 않는 행사입니다.")
+    # 상세 ID가 없거나 목록·월간 인기 조회에 반환할 행사가 없을 때 사용한다.
+    EVENT_NOT_FOUND = (404, "행사를 찾을 수 없습니다.")
 
     # --- TOUR API ---
     # 연결/HTTP/API 실패는 요청 실패로, 응답 구조/페이지 오류는 응답 오류로 묶는다.

@@ -33,9 +33,10 @@ class EventService:
 
     @staticmethod
     def monthly_top(query, today=None):
-        # 선택한 달이 없으면 한국 시간의 현재 달을 사용한다. 달의 마지막 날을
-        # 계산해 연말에도 해당 월에 기록된 조회수만 합산한다.
-        month = query["month"] or (today or datetime.now(KST).date()).replace(day=1)
+        # 선택한 달이 없으면 한국 시간의 현재 달을 사용한다. 조회 기록이
+        # 부족할 때 채울 추천 행사도 같은 날짜의 진행 여부로 판단한다.
+        current_date = today or datetime.now(KST).date()
+        month = query["month"] or current_date.replace(day=1)
         month_end = date(month.year, month.month, monthrange(month.year, month.month)[1])
         monthly_views = (
             select(
@@ -51,17 +52,30 @@ class EventService:
             .subquery()
         )
 
-        # 카테고리와 관계없이 해당 월에 조회수 기록이 있는 모든 행사를
+        # 카테고리와 관계없이 해당 월에 조회수 기록이 있는 현재 행사를
         # 순위에 넣는다. 월간 합계가 같으면 행사 ID 내림차순으로 고정한다.
         statement = (
             select(Event, monthly_views.c.monthly_views)
             .join(monthly_views, monthly_views.c.event_id == Event.id)
             .options(joinedload(Event.category), joinedload(Event.sido))
+            .where(Event.end_date >= current_date)
             .order_by(monthly_views.c.monthly_views.desc(), Event.id.desc())
             .limit(query["size"])
         )
-        rows = db.session.execute(statement).all()
-        # 해당 월에 조회된 행사가 없으면 클라이언트에 행사 없음 오류를 알린다.
+        rows = [(event, views) for event, views in db.session.execute(statement).all()]
+        if len(rows) < query["size"]:
+            # 신규 서비스처럼 일별 조회 기록이 없거나 적어도 빈 화면을 내지 않는다.
+            # 이미 순위에 든 ID를 제외하고 종료일이 가까운 현재 행사부터 채운다.
+            ranked_ids = [event.id for event, _ in rows]
+            recommendations = db.session.scalars(
+                select(Event)
+                .options(joinedload(Event.category), joinedload(Event.sido))
+                .where(Event.end_date >= current_date, Event.id.not_in(ranked_ids))
+                .order_by(Event.end_date.asc(), Event.start_date.asc(), Event.id.asc())
+                .limit(query["size"] - len(rows))
+            ).all()
+            rows.extend((event, 0) for event in recommendations)
+        # DB에 보여줄 현재 행사가 전혀 없을 때만 행사 없음 오류를 반환한다.
         if not rows:
             raise BusinessException(ErrorCode.EVENT_NOT_FOUND)
         return {
@@ -73,14 +87,12 @@ class EventService:
         }
 
     @staticmethod
-    def list_events(query, include_past=False):
+    def list_events(query):
         # 요청에 있는 필터만 SQL 조건에 추가한다. 태그 검색은 EXISTS를 사용해
         # 태그가 여러 개 맞아도 한 행사가 중복되거나 totalCount가 부풀지 않게 한다.
-        conditions = []
-        if not include_past:
-            # 기본 목록은 한국 시간의 오늘까지 진행되는 행사부터 보여준다.
-            # 종료일을 기준으로 하므로 어제 시작했어도 오늘 열리면 포함한다.
-            conditions.append(Event.end_date >= datetime.now(KST).date())
+        # 수집이 실패하거나 자정 직후 아직 정리가 안 된 지난 행사가
+        # 화면에 나타나지 않도록 DB 정리와 별개로 종료일을 검사한다.
+        conditions = [Event.end_date >= datetime.now(KST).date()]
         if query["category_id"] is not None:
             conditions.append(Event.category_id == query["category_id"])
         if query["sido_code"] is not None:
@@ -154,7 +166,9 @@ class EventService:
             statement = (
                 select(Event)
                 .options(selectinload(Event.category), selectinload(Event.sido))
-                .where(Event.id == event_id)
+                # 자정 이후 정기 수집이 아직 실행되지 않았어도 지난 행사는
+                # 상세에서 노출하거나 조회수에 기록하지 않는다.
+                .where(Event.id == event_id, Event.end_date >= view_date)
             )
             if record_view:
                 # MySQL에서는 행사 행 잠금으로 같은 행사 집계를 순차 처리한다.

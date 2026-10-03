@@ -3,7 +3,7 @@
 # tour_sync.py에 있으므로 API 조회만 하고 싶을 때도 이 클래스를 쓸 수 있다.
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -82,23 +82,24 @@ class TourAPI:
 
     @staticmethod
     def validate_festival_dates(start_date=None, end_date=None):
-        # 기간을 둘 다 생략하면 실행한 연도의 1월 1일~12월 31일을 조회한다.
-        # 한쪽만 입력하면 기간 뜻이 불명확해 오류로 처리한다.
+        # 기간을 생략하면 한국 시간 기준 7일 전부터 조회한다. 최근에 등록·수정된
+        # 행사를 놓칠 가능성을 줄이고, 종료일은 생략해 먼 미래의 행사도 포함한다.
         if start_date is None and end_date is None:
-            year = datetime.now().year
-            return f"{year}0101", f"{year}1231"
-        if start_date is None or end_date is None:
-            raise BusinessException(ErrorCode.TOUR_FESTIVAL_INVALID_PERIOD, extra={"reason": "both_dates_required"})
-        start_date, end_date = str(start_date), str(end_date)
-        if not re.fullmatch(r"[0-9]{8}", start_date) or not re.fullmatch(r"[0-9]{8}", end_date):
+            today = datetime.now(timezone(timedelta(hours=9))).date()
+            return (today - timedelta(days=7)).strftime("%Y%m%d"), None
+        if start_date is None:
+            raise BusinessException(ErrorCode.TOUR_FESTIVAL_INVALID_PERIOD, extra={"reason": "start_date_required"})
+        start_date = str(start_date)
+        end_date = str(end_date) if end_date is not None else None
+        if not re.fullmatch(r"[0-9]{8}", start_date) or (end_date is not None and not re.fullmatch(r"[0-9]{8}", end_date)):
             raise BusinessException(ErrorCode.TOUR_FESTIVAL_INVALID_PERIOD, extra={"reason": "invalid_date_format"})
         # 8자리 숫자라도 20260230처럼 실제 달력에 없는 날짜는 거부한다.
         try:
             start = datetime.strptime(start_date, "%Y%m%d")
-            end = datetime.strptime(end_date, "%Y%m%d")
+            end = datetime.strptime(end_date, "%Y%m%d") if end_date is not None else None
         except ValueError as error:
             raise BusinessException(ErrorCode.TOUR_FESTIVAL_INVALID_PERIOD, extra={"reason": "invalid_calendar_date"}) from error
-        if start > end:
+        if end is not None and start > end:
             raise BusinessException(ErrorCode.TOUR_FESTIVAL_INVALID_PERIOD, extra={"reason": "start_after_end"})
         return start_date, end_date
 
@@ -109,13 +110,17 @@ class TourAPI:
         page, received, expected, fingerprints = 1, 0, None, set()  # 페이지/누적/기대 건수/반복 감지
         while True:
             # TourAPI의 한 페이지 최대 100건을 요청하고 정렬을 고정한다.
-            body = self.request("searchFestival2", {
+            params = {
                 "eventStartDate": start_date,
-                "eventEndDate": end_date,
                 "arrange": "A",
                 "pageNo": page,
                 "numOfRows": 100,
-            })
+            }
+            # 종료일을 명시한 범위 조회에서만 전송한다. 기본 수집은 7일 전부터
+            # 이후의 모든 행사를 조회하고, 저장 단계에서 이미 끝난 행사를 거른다.
+            if end_date is not None:
+                params["eventEndDate"] = end_date
+            body = self.request("searchFestival2", params)
             rows = self.get_items(body)
             # totalCount가 숫자가 아니거나 수집 도중 변하면 일부만 받아도
             # 성공으로 보고할 위험이 있으므로 중단한다.

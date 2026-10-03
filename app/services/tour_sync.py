@@ -3,12 +3,12 @@
 # 행사와 태그 연결을 저장한다. 실패 건은 롤백하되 다음 행사는 계속 처리한다.
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from html import unescape
 from urllib.parse import urlsplit
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,9 @@ from app.errors import BusinessException, ErrorCode
 from app.extensions import db
 from app.models.tour_content import Category, Event, Sido, Tag
 from app.services.tour_api import TourAPI
+
+# TourAPI 조회 시작일과 행사 종료 여부를 같은 한국 날짜로 판단한다.
+KST = timezone(timedelta(hours=9))
 
 # API 필드가 응답에 없으면 기존 값은 유지하고, 빈 문자열이면 NULL로 갱신한다.
 # 오른쪽 컬럼의 최대 길이는 모델 메타데이터에서 검사한다.
@@ -280,7 +283,7 @@ class TourSyncService:
             # 검증을 통과한 필드만 행에 반영한다.
             setattr(row, target, value)
 
-    def _save(self, list_item, common, intro, require_existing=False):
+    def _save(self, list_item, common, intro, require_existing=False, active_on=None):
         # 목록과 두 상세가 모두 같은 contentid의 축제인지 먼저 검증한다.
         identifier = self._identity(list_item)
         for detail in (common, intro):
@@ -305,6 +308,11 @@ class TourSyncService:
         for key in ("eventstartdate", "eventenddate"):
             if not _value(merged, key) and _value(list_item, key):
                 merged[key] = list_item[key]
+        # 전체 수집에서는 상세 응답까지 합친 최신 종료일을 기준으로 저장한다.
+        # 목록의 종료일만 보고 건너뛰면 상세에서 연장된 장기 행사를 놓칠 수 있다.
+        if active_on is not None and _value(merged, "eventenddate"):
+            if _date(_value(merged, "eventenddate"), "eventenddate") < active_on:
+                return None
 
         try:
             # 한 행사와 태그의 변경을 하나의 트랜잭션으로 묶는다.
@@ -426,9 +434,22 @@ class TourSyncService:
             require_existing=True,
         )
 
-    def sync_festivals(self, start_date=None, end_date=None):
+    def _prune_expired_events(self, today):
+        # 전체 목록과 상세가 모두 성공한 뒤에만 지난 행사를 삭제한다.
+        # event_tags와 event_daily_views는 FK의 ON DELETE CASCADE로 함께 정리된다.
+        # 오늘 종료하는 행사는 오늘까지 열리므로 삭제 조건은 < today다.
+        with Session(self.engine) as session, session.begin():
+            session.execute(delete(Event).where(Event.end_date < today))
+
+    def sync_festivals(self, start_date=None, end_date=None, today=None):
         # 전국 목록의 모든 페이지를 돌며 상세까지 수집한다.
         # saved는 성공 건수, failures는 건별 오류, complete는 전체 성공 여부다.
+        # 한 번의 수집 내내 같은 한국 날짜를 사용해 자정 전후의 판단 차이를 막는다.
+        today = today or datetime.now(KST).date()
+        if start_date is None and end_date is None:
+            # API 조회는 누락 방지를 위해 7일 전부터 넓게 잡는다. 실제 저장과
+            # 기존 행사의 삭제 여부는 조회 시작일이 아닌 종료일로 판단한다.
+            start_date = (today - timedelta(days=7)).strftime("%Y%m%d")
         report = {
             "saved": 0,
             "failures": [],
@@ -444,8 +465,9 @@ class TourSyncService:
                         identifier = self._identity(item)
                         common = self.api.festival_common(identifier)
                         intro = self.api.festival_intro(identifier)
-                        self._save(item, common, intro)
-                        report["saved"] += 1
+                        saved_id = self._save(item, common, intro, active_on=today)
+                        if saved_id is not None:
+                            report["saved"] += 1
                     except BusinessException as error:
                         # 건별 실패만 기록하고 다음 축제 수집은 계속한다.
                         report["failures"].append({
@@ -465,4 +487,8 @@ class TourSyncService:
                 "extra": error.extra,
             })
         report["complete"] = not report["failures"]
+        if report["complete"]:
+            # 부분 실패 중에는 기존 행사를 지우지 않는다. 삭제가 실패해도
+            # 성공 시각이 갱신되지 않도록 예외를 호출자에게 그대로 전달한다.
+            self._prune_expired_events(today)
         return report

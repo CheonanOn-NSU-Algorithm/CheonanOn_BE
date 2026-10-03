@@ -5,7 +5,6 @@
 | 경로 | 기능 |
 |---|---|
 | `GET /api/event` | 오늘도 열리거나 앞으로 열릴 행사 목록·검색·필터·페이지 조회 |
-| `GET /api/event/all` | 날짜 제한 없는 전체 행사 목록·검색·필터·페이지 조회 |
 | `GET /api/event/<id>` | 행사 상세 조회와 조회수 기록 |
 | `GET /api/event/monthly-top` | 전체 카테고리의 월간 조회수 상위 행사 |
 | `GET /api/event/categories` | 카테고리 선택지 |
@@ -15,9 +14,9 @@
 
 ## 1. 행사 목록
 
-`GET /api/event` 또는 `GET /api/event/all`
+`GET /api/event`
 
-`/api/event`는 요청 시점의 한국 날짜를 기준으로 종료일이 오늘 이상인 행사만 반환합니다. 이미 시작했지만 오늘도 열리는 행사도 포함합니다. `/api/event/all`은 이 기본 날짜 제한이 없어 지난 행사를 포함한 DB의 모든 행사를 조회할 수 있습니다. 두 경로 모두 아래 필터와 페이지 기능, 같은 응답 형식을 사용합니다.
+`/api/event`는 요청 시점의 한국 날짜를 기준으로 종료일이 오늘 이상인 행사만 반환합니다. 이미 시작했지만 오늘도 열리는 행사도 포함합니다. 전체 수집이 성공하면 저장된 지난 행사는 DB에서 삭제하며, 수집 사이에도 지난 행사가 노출되지 않도록 조회 조건을 유지합니다.
 
 | 이름 | 형식 | 기본값 | 설명 |
 |---|---|---|---|
@@ -31,11 +30,10 @@
 | `page` | 1~2,147,483,647의 정수 | `1` | 페이지 번호 |
 | `size` | 1~100의 정수 | `20` | 페이지당 행사 수 |
 
-두 날짜를 함께 보내면 조회 기간과 하루라도 겹치는 행사를 찾습니다. `/api/event`에서는 날짜 필터를 붙여도 이미 끝난 행사는 포함되지 않으며, 과거 날짜 검색에는 `/api/event/all`을 사용합니다. 시작일이 종료일보다 늦으면 400입니다. `latest`·`popular`의 동률은 행사 ID 내림차순, `dateAsc`의 동률은 ID 오름차순입니다. `popular`는 `events.view_count` 누적값을 사용합니다. 존재하지 않는 카테고리·시도 ID나 결과가 없는 페이지를 요청하면 `404 EVENT_NOT_FOUND`입니다.
+두 날짜를 함께 보내면 조회 기간과 하루라도 겹치는 행사를 찾습니다. 날짜 필터를 붙여도 이미 끝난 행사는 포함되지 않습니다. 시작일이 종료일보다 늦으면 400입니다. `latest`·`popular`의 동률은 행사 ID 내림차순, `dateAsc`의 동률은 ID 오름차순입니다. `popular`는 `events.view_count` 누적값을 사용합니다. 존재하지 않는 카테고리·시도 ID나 결과가 없는 페이지를 요청하면 `404 EVENT_NOT_FOUND`입니다.
 
 ```http
 GET /api/event?q=축제&sido_code=44&page=1&size=20
-GET /api/event/all?end_date=2025-12-31&page=1&size=20
 ```
 
 ```json
@@ -70,7 +68,7 @@ GET /api/event/all?end_date=2025-12-31&page=1&size=20
 
 ## 2. 행사 상세
 
-`GET /api/event/<id>`의 `id`는 TourAPI의 `contentid`가 아닌 목록 카드의 `events.id`입니다. 1~2,147,483,647을 허용합니다. 범위 안의 없는 ID는 `404 EVENT_NOT_FOUND`입니다.
+`GET /api/event/<id>`의 `id`는 TourAPI의 `contentid`가 아닌 목록 카드의 `events.id`입니다. 1~2,147,483,647을 허용합니다. 범위 안의 없는 ID나 종료일이 지난 행사는 `404 EVENT_NOT_FOUND`입니다.
 
 상세 `data`에는 목록 카드의 필드와 `description`, `address`, `addressDetail`, `playTime`, `feeText`, `imageUrl`, `latitude`, `longitude`, `organizer`, `contactPhone`, `homepageUrl`, `isPermanent`가 들어갑니다. 정보가 없는 선택 필드는 `null`입니다.
 
@@ -87,7 +85,7 @@ GET /api/event/all?end_date=2025-12-31&page=1&size=20
 | `month` | `YYYY-MM` | 한국 시간 기준 이번 달 | 조회할 달 |
 | `size` | 1~20의 정수 | `4` | 반환할 행사 수 |
 
-선택한 달의 일별 조회수를 행사별로 합산합니다. 카테고리와 관계없이 해당 월 합계가 1 이상인 행사를 조회수 내림차순으로 반환합니다. 동률은 행사 ID 내림차순입니다. 행사 진행 기간은 순위 조건이 아닙니다. 일별 조회수 기록이 없으면 `404 EVENT_NOT_FOUND`입니다. 과거 누적 조회수를 일별 조회수로 복원하지 않습니다.
+선택한 달의 일별 조회수를 행사별로 합산합니다. 카테고리와 관계없이 현재 열리거나 앞으로 열릴 행사를 조회수 내림차순으로 반환합니다. 동률은 행사 ID 내림차순입니다. 기록이 없거나 요청한 `size`보다 적으면 종료일이 가까운 현재 행사부터 중복 없이 채우며, 이 추천 카드의 `monthlyViews`는 0입니다. 현재 행사가 DB에 전혀 없을 때만 `404 EVENT_NOT_FOUND`입니다. 과거 누적 조회수를 일별 조회수로 복원하지 않습니다.
 
 ```http
 GET /api/event/monthly-top?month=2026-09&size=4
@@ -120,7 +118,7 @@ GET /api/event/monthly-top?month=2026-09&size=4
 }
 ```
 
-`monthlyViews`는 해당 월의 조회수이며 목록의 `sort=popular`에서 사용하는 누적 조회수와 다릅니다.
+`monthlyViews`는 해당 월의 조회수이며 목록의 `sort=popular`에서 사용하는 누적 조회수와 다릅니다. 조회 기록이 부족해 추가한 추천 행사에는 0을 반환합니다.
 
 ## 4. 카테고리·시도 선택지
 
@@ -135,13 +133,13 @@ GET /api/event/monthly-top?month=2026-09&size=4
 | 상태 | code | 원인 |
 |---|---|---|
 | 400 | `COMMON_INVALID_INPUT` | 값의 타입·형식·범위, 알 수 없는 키, 중복 키 |
-| 404 | `EVENT_NOT_FOUND` | 상세 ID가 없거나 행사 목록·월간 인기 결과가 비어 있음 |
+| 404 | `EVENT_NOT_FOUND` | 상세 ID가 없거나 행사 목록·월간 추천 결과에 보여줄 현재 행사가 없음 |
 | 404 | `Not Found` | 등록되지 않은 URL 또는 정수가 아닌 상세 경로 |
 | 405 | `Method Not Allowed` | 허용되지 않은 메서드. `Allow` 헤더 포함 |
 | 503 | `COMMON_DB_UNAVAILABLE` | DB 접속·연결 풀·일시적인 잠금 장애 |
 | 500 | `COMMON_INTERNAL_ERROR` | 기타 DB 실행 오류·예상하지 못한 오류 |
 
-행사 조회 결과가 비면 다음 비즈니스 오류를 반환합니다. 목록 조회는 검색 결과가 없거나 요청 페이지가 범위를 넘을 때도 동일합니다.
+행사 조회 결과가 비면 다음 비즈니스 오류를 반환합니다. 목록 조회는 검색 결과가 없거나 요청 페이지가 범위를 넘을 때도 동일합니다. 월간 인기 조회는 조회수 기록이 없어도 현재 행사로 채우고, DB에 보여줄 행사가 전혀 없을 때만 이 오류를 반환합니다.
 
 ```json
 {

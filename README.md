@@ -132,18 +132,20 @@ service = TourSyncService()
 result = service.sync_festivals("20260101", "20261231")  # 전국 축제·공연·전시 등 행사
 print(result)
 
-# 기간을 생략하면 실행 시점의 1월 1일부터 12월 31일까지 조회합니다.
+# 기간을 생략하면 한국 시간의 7일 전부터 종료일 제한 없이 조회합니다.
 result = service.sync_festivals()
 
 # 이미 events에 저장된 행사 한 건의 상세 정보만 다시 가져옵니다.
 event_id = service.sync_detail("2746930")  # TourAPI contentid; 실제 저장된 ID로 변경
 ```
 
-`sync_festivals()`는 `searchFestival2`를 지역 필터 없이 조회하므로 전국 범위입니다. 한 페이지에 100건씩 `totalCount`까지 조회합니다. 시작일과 종료일은 둘 다 `YYYYMMDD` 형식으로 전달하거나 둘 다 생략해야 합니다. `TourAPI.festival()`은 DB 저장 없이 목록만 확인할 때 사용할 수 있습니다.
+`sync_festivals()`는 `searchFestival2`를 지역 필터 없이 조회하므로 전국 범위입니다. 한 페이지에 100건씩 `totalCount`까지 조회합니다. 기본 수집은 한국 시간의 7일 전을 `eventStartDate`로 보내고 `eventEndDate`는 생략해 올해 말 이후 행사도 포함합니다. 기간을 직접 지정할 때는 `YYYYMMDD` 시작일과 선택적인 종료일을 전달할 수 있습니다. `TourAPI.festival()`은 DB 저장 없이 목록만 확인할 때 사용할 수 있습니다.
 
 각 목록 항목마다 `detailCommon2`와 `detailIntro2`를 가져온 뒤 `tour_content_id`를 기준으로 `events`에 추가 또는 갱신합니다. 상세 API 호출과 검증이 모두 끝나기 전에는 DB를 바꾸지 않습니다. `overview`는 소개글, `eventplace`는 장소, `mapy`/`mapx`는 위도/경도, `lDongRegnCd` 앞 두 자리는 `sidos.code`에 대응합니다. `lclsSystm3`은 시드 분류 규칙에 따라 축제·계절행사·공연·전시·체험으로 변환합니다. 소개글에서 시드 태그 단어가 발견되면 `event_tags`를 갱신합니다. `fee_text`는 실제 API 응답이 500자를 넘을 수 있어 원문을 `TEXT`로 저장합니다. 요금은 명확한 원 단위 금액이나 무료 표시가 있을 때만 `price`와 `is_free`로 변환하고, 판단할 수 없으면 `NULL`로 둡니다.
 
 응답에 아예 없는 필드는 기존 값을 유지합니다. 같은 ID를 다시 수집해도 새 행사 행이 중복 생성되지 않으며 `view_count`와 `event_daily_views` 값도 초기화하지 않습니다. 조회수는 행사 상세 GET API에서 기록합니다. 행사 기간이 90일을 넘으면 `is_permanent`가 참이 됩니다.
+
+종료일이 오늘보다 지난 행사는 저장하지 않습니다. 전체 목록과 상세 수집이 모두 성공한 뒤에는 DB에 남은 지난 행사도 삭제합니다. 오늘 끝나는 행사는 유지하며, 행사 삭제 시 해당 태그 연결과 일별 조회수도 함께 삭제됩니다. 부분 실패 중에는 기존 행사를 정리하지 않습니다.
 
 반환값은 `{"saved": 0, "failures": [], "complete": True}` 형태입니다. `saved`는 저장 성공 항목 수, `failures`는 페이지·content ID·에러 코드·메시지, `complete`는 실패가 하나도 없었는지를 뜻합니다. 한 축제 저장이 실패하면 해당 축제 트랜잭션만 롤백하고 다음 항목을 계속합니다. 목록 페이지 자체가 실패하면 그 시점에 중단되며 앞서 완료한 저장은 남습니다. 실패 원인을 고친 뒤 같은 기간으로 다시 실행하면 `tour_content_id` 기준으로 갱신됩니다.
 
@@ -168,19 +170,17 @@ Flask 앱 실행 후 `http://127.0.0.1:5000`에서 저장된 행사를 조회할
 | 경로 | 설명 |
 |---|---|
 | `GET /api/event` | 한국 시간 기준 오늘도 열리거나 앞으로 열릴 행사 목록·검색·필터·페이지 조회 |
-| `GET /api/event/all` | 지난 행사까지 포함한 전체 목록·검색·필터·페이지 조회 |
 | `GET /api/event/<id>` | 상세 조회와 누적·일별 조회수 기록 (`events.id` 사용) |
 | `GET /api/event/monthly-top` | 전체 카테고리의 월간 조회수 상위 행사 (`month=YYYY-MM`, `size=1~20`) |
 | `GET /api/event/categories` | 카테고리 선택지 (`id`, `name`, `sortOrder`) |
 | `GET /api/event/sidos` | 시도 선택지 (`code`, `name`, `shortName`, `sortOrder`) |
 
-두 목록의 조건은 `q`, `category_id`, `sido_code`, `is_free=true|false`, `start_date`·`end_date`(`YYYY-MM-DD`), `sort=latest|popular|dateAsc`, `page`(기본 1), `size`(기본 20, 최대 100)입니다. `/api/event`는 종료일이 오늘 이상인 행사만 보여주며, 과거 날짜 검색에는 `/api/event/all`을 사용합니다. 기간은 행사가 하루라도 겹치면 포함합니다. `popular`는 누적 조회수, `monthly-top`은 해당 월의 일별 조회수 합계 기준입니다.
+행사 목록의 조건은 `q`, `category_id`, `sido_code`, `is_free=true|false`, `start_date`·`end_date`(`YYYY-MM-DD`), `sort=latest|popular|dateAsc`, `page`(기본 1), `size`(기본 20, 최대 100)입니다. `/api/event`는 종료일이 오늘 이상인 행사만 보여줍니다. 기간은 행사가 하루라도 겹치면 포함합니다. `popular`는 누적 조회수 기준입니다. `monthly-top`은 해당 월의 일별 조회수 합계로 정렬하고 부족한 자리를 현재 행사로 채웁니다.
 
 ```text
 GET /api/event?q=축제&sido_code=44&page=1&size=20
-GET /api/event/all?end_date=2025-12-31&page=1&size=20
 GET /api/event/1
 GET /api/event/monthly-top?month=2026-09&size=4
 ```
 
-목록 `data`에는 `totalCount`, `page`, `size`, `events`가 들어갑니다. 선택지의 `data`는 배열이며, 선택한 카테고리 `id`와 시도 `code`를 목록 조건에 사용합니다. 상세 GET은 한국 날짜 기준 일별 조회수를 기록합니다. 잘못된 입력은 400, 없는 행사 ID나 빈 행사 목록·월간 순위는 `404 EVENT_NOT_FOUND`, 일시적인 DB 장애는 503으로 응답합니다. 요청·응답 필드와 오류 예시는 [행사 API 명세서](docs/event_api_spec.md)를 확인하세요.
+목록 `data`에는 `totalCount`, `page`, `size`, `events`가 들어갑니다. 선택지의 `data`는 배열이며, 선택한 카테고리 `id`와 시도 `code`를 목록 조건에 사용합니다. 상세 GET은 한국 날짜 기준 일별 조회수를 기록합니다. 잘못된 입력은 400, 없는 행사 ID나 빈 행사 목록·추천할 행사 자체가 없는 월간 순위는 `404 EVENT_NOT_FOUND`, 일시적인 DB 장애는 503으로 응답합니다. 요청·응답 필드와 오류 예시는 [행사 API 명세서](docs/event_api_spec.md)를 확인하세요.

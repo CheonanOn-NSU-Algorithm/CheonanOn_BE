@@ -49,15 +49,6 @@ def list_events():
     return jsonify(CommonResponse.success(data)), 200
 
 
-@events_bp.get("/all")
-def list_all_events():
-    # 과거 행사까지 조회하되 목록 API의 검색·정렬·페이지 계약은 그대로 사용한다.
-    query = EventListQuerySchema().load(request.args)
-    result = EventService.list_events(query, include_past=True)
-    data = EventListResponseSchema().dump(result)
-    return jsonify(CommonResponse.success(data)), 200
-
-
 @events_bp.get("/monthly-top")
 def monthly_top_events():
     # 조회할 월과 카드 개수를 검증한다. 월 경계와 순위 계산은 서비스에서 맡는다.

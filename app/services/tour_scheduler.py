@@ -108,8 +108,8 @@ class FestivalSyncScheduler:
                         # sync_festivals()는 각 축제를 독립 트랜잭션으로 저장한다.
                         # 한 건 실패해도 다음 건을 처리하고 report.failures에 남기므로
                         # 예외가 없다는 이유만으로 전체 성공이라고 판단할 수 없다.
-                        # 인자를 생략하면 실행 연도의 1월 1일~12월 31일
-                        # 전국 축제 목록과 각 항목의 상세를 다시 가져온다.
+                        # 인자를 생략하면 한국 시간의 7일 전부터 전국 행사와
+                        # 각 항목의 상세를 다시 가져오고 종료일이 지난 행사를 정리한다.
                         report = TourSyncService().sync_festivals()
                         if report["complete"]:
                             # complete=True는 건별·목록 페이지 실패가 모두 없다는 뜻이다.

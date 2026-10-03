@@ -2,7 +2,7 @@
 
 프로젝트 루트에서 ``python sync_festivals_manual.py``로 실행한다.
 TourAPI 목록과 각 축제의 상세를 조회해 기존 TourSyncService로 events에
-추가·갱신한다. 웹서버와 예약 작업은 이 파일을 import하지 않는다.
+추가·갱신하고, 전체 성공 후 지난 행사를 정리한다. 웹서버와 예약 작업은 이 파일을 import하지 않는다.
 따라서 이 파일만 별도로 제거해도 본편의 API·자동 갱신에는 영향이 없다.
 """
 

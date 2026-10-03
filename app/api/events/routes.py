@@ -43,9 +43,18 @@ def list_sidos():
 
 @events_bp.get("")
 def list_events():
-    # 쿼리 파라미터의 타입·범위를 스키마에서 검사한 뒤 서비스에 전달한다.
+    # 한국 시간 기준 이미 끝난 행사는 제외하고, 나머지 조건을 함께 적용한다.
     query = EventListQuerySchema().load(request.args)
     result = EventService.list_events(query)
+    data = EventListResponseSchema().dump(result)
+    return jsonify(CommonResponse.success(data)), 200
+
+
+@events_bp.get("/all")
+def list_all_events():
+    # 과거 행사까지 조회하되 목록 API의 검색·정렬·페이지 계약은 그대로 사용한다.
+    query = EventListQuerySchema().load(request.args)
+    result = EventService.list_events(query, include_past=True)
     data = EventListResponseSchema().dump(result)
     return jsonify(CommonResponse.success(data)), 200
 

@@ -16,7 +16,8 @@
 #   /api  +  /auth   +  /refresh  →  POST /api/auth/refresh   토큰 재발급
 #   /api  +  /auth   +  /logout   →  POST /api/auth/logout    로그아웃
 #   /api  +  /users  +  /me       →  GET  /api/users/me       내 정보 조회
-#   /api  +  /event + /       →  GET  /api/event         행사 목록
+#   /api  +  /event + /       →  GET  /api/event         오늘도 열리거나 앞으로 열릴 행사
+#   /api  +  /event + /all    →  GET  /api/event/all     전체 행사 목록
 #   /api  +  /event + /<id>   →  GET  /api/event/<id>    행사 상세
 #   ※ 그래서 자식 Blueprint(auth_bp, users_bp)의 url_prefix에는 "/api"를 다시 쓰면 안 된다.
 #     (쓰면 /api/api/auth/... 가 된다)

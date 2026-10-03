@@ -70,10 +70,14 @@ class EventService:
         }
 
     @staticmethod
-    def list_events(query):
+    def list_events(query, include_past=False, today=None):
         # 요청에 있는 필터만 SQL 조건에 추가한다. 태그 검색은 EXISTS를 사용해
         # 태그가 여러 개 맞아도 한 행사가 중복되거나 totalCount가 부풀지 않게 한다.
         conditions = []
+        if not include_past:
+            # 기본 목록은 한국 시간의 오늘까지 진행되는 행사부터 보여준다.
+            # 종료일을 기준으로 하므로 어제 시작했어도 오늘 열리면 포함한다.
+            conditions.append(Event.end_date >= (today or datetime.now(KST).date()))
         if query["category_id"] is not None:
             conditions.append(Event.category_id == query["category_id"])
         if query["sido_code"] is not None:
@@ -154,7 +158,7 @@ class EventService:
             "sort": "dateAsc",
             "page": query["page"],
             "size": query["size"],
-        })
+        }, today=start_date)
 
     @staticmethod
     def get_event(event_id, today=None, request_method="GET"):

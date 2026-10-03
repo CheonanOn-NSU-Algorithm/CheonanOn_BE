@@ -47,7 +47,7 @@ class Event(db.Model):
     is_free = db.Column(db.Boolean)  # 요금 판단 불가 시 NULL
     organizer = db.Column(db.String(300))  # sponsor1: 주최
     contact_phone = db.Column(db.String(300))  # tel: 문의 전화
-    homepage_url = db.Column(db.String(1000))  # 행사 홈페이지
+    homepage_url = db.Column(db.String(1000))  # TourAPI 문구·HTML을 제거한 홈페이지 URL 하나
     is_permanent = db.Column(db.Boolean, nullable=False, default=False)  # 기간 90일 초과 여부
     view_count = db.Column(db.Integer, nullable=False, default=0)  # 누적 조회수; 수집 시 초기화 안 함
     tour_modified_at = db.Column(db.DateTime)  # API modifiedtime

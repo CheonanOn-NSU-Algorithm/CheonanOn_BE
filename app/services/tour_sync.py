@@ -5,6 +5,8 @@
 import re
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from html import unescape
+from urllib.parse import urlsplit
 
 from sqlalchemy import select
 from sqlalchemy.exc import DataError, IntegrityError
@@ -47,6 +49,50 @@ TAG_KEYWORDS = (
     "꽃",
     "먹거리",
 )
+
+
+# TourAPI의 homepage에는 URL 외에 링크 태그, 설명, 여러 SNS 주소가 함께 올 수 있다.
+# href가 있으면 실제 링크 대상을 사용하고, 없으면 문장에 처음 등장하는 주소를 쓴다.
+HREF_PATTERN = re.compile(r"\bhref\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s>]+))", re.I)
+URL_PATTERN = re.compile(
+    r"https?://[^\s<>\"']+|(?<![\w@/])(?:[\w-]+\.)+[\w-]{2,}(?::\d+)?(?:[/?][^\s<>\"']*)?",
+    re.I,
+)
+
+
+def _homepage_url(value):
+    # HTML 엔티티를 먼저 풀어 href의 쿼리 문자열에 들어 있는 &도 원래대로 저장한다.
+    # 프런트엔드가 그대로 링크로 사용할 수 있도록 http(s) URL 하나만 반환한다.
+    if not value:
+        return None
+    text = unescape(value)
+    href = HREF_PATTERN.search(text)
+    candidates = ([next(part for part in href.groups() if part is not None)] if href else [])
+    candidates.extend(match.group() for match in URL_PATTERN.finditer(text))
+    for candidate in candidates:
+        candidate = candidate.strip().rstrip(".,;:!?)]}")
+        if any(char.isspace() for char in candidate):
+            continue
+        if candidate.startswith("//"):
+            candidate = "https:" + candidate
+        elif not re.match(r"https?://", candidate, re.I):
+            candidate = "https://" + candidate
+        try:
+            parsed = urlsplit(candidate)
+            if (
+                parsed.scheme.lower() in ("http", "https")
+                and parsed.hostname
+                and "." in parsed.hostname
+                and not parsed.hostname.startswith("httpwww.")
+                and not parsed.username
+                and not parsed.password
+            ):
+                parsed.port  # 잘못된 포트 표기는 URL로 저장하지 않는다.
+                return candidate
+        except ValueError:
+            continue
+    # 원본에 유효한 웹 주소가 없다면 설명 문구 대신 NULL을 저장한다.
+    return None
 
 
 def _value(item, key):
@@ -215,6 +261,9 @@ class TourSyncService:
             value = str(value) if value is not None else None
             if value == "":
                 value = None
+            if source == "homepage":
+                # URL 이외의 태그·문구·두 번째 링크를 DB에 남기지 않는다.
+                value = _homepage_url(value)
             # 모델 컬럼의 nullable/길이를 그대로 사용해 DB 오류 전에 검증한다.
             column = Event.__table__.columns[target]
             if value is None and not column.nullable:

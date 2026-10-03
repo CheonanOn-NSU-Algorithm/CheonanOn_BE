@@ -71,6 +71,8 @@ GET /api/event?q=축제&sido_code=44&page=1&size=20
 
 상세 `data`에는 목록 카드의 필드와 `description`, `address`, `addressDetail`, `playTime`, `feeText`, `imageUrl`, `latitude`, `longitude`, `organizer`, `contactPhone`, `homepageUrl`, `isPermanent`가 들어갑니다. 정보가 없는 선택 필드는 `null`입니다.
 
+`homepageUrl`은 수집 원문에 HTML 링크·설명·여러 주소가 있어도 웹 주소 하나만 저장해 반환합니다. 링크 태그가 있으면 `href`를 우선 사용하고, 없으면 처음 나온 주소를 사용합니다. SNS 주소도 URL이면 저장하며, 주소를 확인할 수 없는 값만 `null`입니다.
+
 정상적인 상세 GET마다 `events.view_count`와 한국 날짜의 `event_daily_views.view_count`가 각각 1씩 증가합니다. 같은 사용자의 반복 조회도 매번 집계합니다. 목록·선택지·월간 순위·HEAD·OPTIONS와 없는 행사 조회는 집계하지 않습니다. 두 집계는 한 트랜잭션으로 저장하며 실패하면 모두 롤백합니다. MySQL에서는 행사 행 잠금으로 같은 행사에 대한 동시 요청을 순차 처리합니다. 조회수 기록은 `events.updated_at`을 바꾸지 않습니다. DB 저장 후 응답 전달이 실패해도 해당 조회는 집계될 수 있습니다.
 
 ## 3. 월간 인기 행사

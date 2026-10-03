@@ -6,7 +6,7 @@ from app.config import Config  # JWT_SECRET_KEY, DB URI 등 환경설정 값을 
 
 from app.errors import BusinessException, ErrorCode  # 공통 비지니스 예외 클래스
 from app.common_response import CommonResponse  # 공통 응답 반환
-from werkzeug.exceptions import HTTPException
+from werkzeug.exceptions import HTTPException, MethodNotAllowed
 
 from app.extensions import db, migrate, jwt  # DB/마이그레이션/JWT 확장 객체 (app에 바인딩할 예정)
 # models 패키지를 import해서 User, TokenBlocklist 등 모델 클래스들을 로드시킴.
@@ -95,15 +95,12 @@ def register_error_handlers(app: Flask):
     def handle_http_exception(e: HTTPException):
         # 404, 405 같은 라우팅 단계 오류. ErrorCode가 없어서 CommonResponse.error()로는
         # 못 만들고, HTTPException이 이미 들고 있는 code/name/description으로 직접 구성한다.
-        # 원래 응답의 Allow(405) 등 프로토콜 헤더를 보존하고 본문만 JSON으로 바꾼다.
-        response = e.get_response()
-        response.set_data(app.json.dumps({
-            "success": False,
-            "code": e.name,
-            "message": e.description,
-        }))
-        response.content_type = "application/json"
-        return response
+        response = jsonify({"success": False, "code": e.name, "message": e.description})
+        # 405는 RFC상 Allow 헤더가 필수다. Werkzeug가 만들어 주던 헤더가 직접 응답을 만들면서
+        # 사라지므로, 허용 메서드 목록(e.valid_methods)으로 다시 채운다.
+        if isinstance(e, MethodNotAllowed) and e.valid_methods:
+            response.headers["Allow"] = ", ".join(e.valid_methods)
+        return response, e.code
 
     @app.errorhandler(DBAPIError)
     @app.errorhandler(DatabaseTimeoutError)

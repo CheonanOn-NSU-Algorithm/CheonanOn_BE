@@ -1,5 +1,6 @@
 from flask import Flask, jsonify  # Flask 앱 객체 생성, 에러 핸들러 응답용 jsonify
 from marshmallow import ValidationError  # 스키마 load() 검증 실패 시 발생하는 예외 (아래 핸들러에서 400으로 변환)
+from sqlalchemy.exc import DBAPIError, TimeoutError as DatabaseTimeoutError
 
 from app.config import Config  # JWT_SECRET_KEY, DB URI 등 환경설정 값을 담은 클래스
 
@@ -31,15 +32,15 @@ def create_app():
     # `# noqa: F401`은 "import해놓고 안 쓴다"는 린터 경고를 끄는 표시 (의도된 import라서).
     from app import jwt_callbacks  # noqa: F401
 
-    register_error_handlers(app)  # 전역 공통 에러 핸들러 등록 (아래 register_error_handlers 참고)
-    register_blueprints(app)      # API 라우트(Blueprint) 등록 (아래 register_blueprints 참고)
+    register_error_handlers(app)  # 모든 도메인의 요청·DB·HTTP 오류를 공통 형식으로 처리
+    register_blueprints(app)      # 인증·회원·행사 API Blueprint를 등록
 
     return app
 
 def register_blueprints(app: Flask):
     """모든 API 라우트를 앱에 등록한다.
 
-    개별 Blueprint(auth_bp, users_bp 등)는 app/api/__init__.py의 부모 Blueprint(api_bp)에
+    개별 Blueprint(auth_bp, users_bp, events_bp 등)는 app/api/__init__.py의 부모 Blueprint(api_bp)에
     이미 묶여 있어서, 여기서는 api_bp 하나만 등록하면 된다.
     새 도메인 API를 추가할 때는 이 함수가 아니라 app/api/__init__.py를 수정한다.
     최종 URL 목록도 app/api/__init__.py 상단 주석에 정리되어 있다.
@@ -61,13 +62,15 @@ def register_error_handlers(app: Flask):
        새 실패 케이스가 생겨도 이 함수나 새 예외 클래스를 추가할 필요 없이
        app/errors/codes.py의 ErrorCode에 멤버 하나만 추가하고
        raise BusinessException(ErrorCode.그_멤버)만 하면 된다.
-    1-1) ValidationError : marshmallow 스키마 load()의 요청 값 검증 실패 (필수값 누락 등).
-       → 400 COMMON_INVALID_INPUT + 필드별 에러(errors)
+    2) ValidationError : Marshmallow 스키마의 요청값 검증 실패.
+       400 COMMON_INVALID_INPUT과 필드별 errors를 응답한다.
     ※ JWT 관련 실패(토큰 없음/만료/위조/로그아웃됨)는 여기가 아니라
        app/jwt_callbacks.py의 콜백들이 처리한다.
-    2) HTTPException : 존재하지 않는 라우트(404), 잘못된 HTTP 메서드(405) 등
+    3) HTTPException : 존재하지 않는 라우트(404), 잘못된 HTTP 메서드(405) 등
        Flask/Werkzeug가 라우팅 단계에서 자체적으로 던지는 예외.
-    3) Exception : 위 두 경우로 못 거른, 코드 버그나 외부 API 실패 등
+    4) DBAPIError/TimeoutError : DB 연결·풀·일시적 잠금 장애는 503으로 구분한다.
+       쿼리·권한 등 다른 DB 실행 오류는 기존 내부 오류(500)로 응답한다.
+    5) Exception : 위 경우로 못 거른, 코드 버그나 외부 API 실패 등
        예상 못한 모든 예외를 잡는 최종 안전망. 이게 없으면 이런 예외는
        그대로 500으로 터지면서 우리 공통 응답 포맷을 벗어난다."""
 
@@ -98,6 +101,24 @@ def register_error_handlers(app: Flask):
         if isinstance(e, MethodNotAllowed) and e.valid_methods:
             response.headers["Allow"] = ", ".join(e.valid_methods)
         return response, e.code
+
+    @app.errorhandler(DBAPIError)
+    @app.errorhandler(DatabaseTimeoutError)
+    def handle_database_error(e):
+        # MySQL 연결 수 초과(1040), 잠금 대기/교착(1205/1213), 접속·단절 오류를
+        # 일시적 사용 불가로 분류한다. 계정 권한·SQL·무결성 오류는 500으로 남긴다.
+        driver_args = getattr(getattr(e, "orig", None), "args", ())
+        driver_code = driver_args[0] if driver_args else None
+        error_code = (
+            ErrorCode.COMMON_DB_UNAVAILABLE
+            if isinstance(e, DatabaseTimeoutError)
+            or driver_code in (1040, 1205, 1213, 2002, 2003, 2005, 2006, 2013)
+            or getattr(e, "connection_invalidated", False)
+            else ErrorCode.COMMON_INTERNAL_ERROR
+        )
+        # SQL·접속 정보·원본 오류는 로그에서 확인하고 응답에는 공통 메시지만 보낸다.
+        app.logger.exception(e)
+        return jsonify(CommonResponse.error(error_code)), error_code.status_code
 
     @app.errorhandler(Exception)
     def handle_unexpected_exception(e: Exception):

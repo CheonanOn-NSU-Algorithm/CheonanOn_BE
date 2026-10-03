@@ -32,6 +32,9 @@ class Config:
     # JWT 서명/검증에 쓰는 비밀키. .env의 JWT_SECRET_KEY 값을 그대로 사용
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
 
+    # 한국관광공사 API 키. .env의 TOURAPI_KEY 값을 그대로 사용
+    TOURAPI_KEY = os.environ.get("TOURAPI_KEY")
+
     # access token 유효기간 (짧게 유지, 만료되면 refresh token으로 재발급)
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=1)
 
@@ -40,3 +43,6 @@ class Config:
 
     # DB 접속 URL. .env의 SQLALCHEMY_DATABASE_URI 값을 그대로 사용
     SQLALCHEMY_DATABASE_URI = os.environ.get("SQLALCHEMY_DATABASE_URI")
+    # 풀에서 꺼낸 연결이 살아 있는지 확인한다. MySQL 재시작 후 남은 오래된 연결은
+    # 쿼리 실행 전에 교체한다. 실행 중 실패한 요청을 자동 재실행하는 옵션은 아니다.
+    SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}

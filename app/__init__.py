@@ -82,7 +82,11 @@ def register_error_handlers(app: Flask):
 
     @app.errorhandler(ValidationError)
     def handle_validation_error(e: ValidationError):
-        # develop의 검증 오류 계약: 필드별 사유를 errors에 담아 400으로 응답한다.
+        # marshmallow 스키마의 load()가 실패하면(필수값 누락, 빈 문자열 등) 여기로 온다.
+        # 이 핸들러가 없으면 아래 Exception 핸들러로 떨어져서 클라이언트 실수인데도 500이 나간다.
+        # e.messages에 필드별 에러가 dict로 들어 있어서 extra로 그대로 내려준다.
+        # 예: {"success": false, "code": "COMMON_INVALID_INPUT", "message": "요청 값이 올바르지 않습니다.",
+        #      "errors": {"code": ["Missing data for required field."]}}
         return jsonify(
             CommonResponse.error(ErrorCode.COMMON_INVALID_INPUT, extra={"errors": e.messages})
         ), ErrorCode.COMMON_INVALID_INPUT.status_code

@@ -17,6 +17,36 @@ class ErrorCode(Enum):
     # --- COMMON ---
     # 도메인을 특정하기 애매한 일반적인 요청 값 오류(필수값 누락, 형식 오류 등)에 사용.
     COMMON_INVALID_INPUT = (400, "요청 값이 올바르지 않습니다.")
+    # 연결 장애·풀 대기 초과·일시적 잠금 충돌을 하나의 DB 사용 불가 오류로 묶는다.
+    COMMON_DB_UNAVAILABLE = (503, "데이터베이스를 사용할 수 없습니다. 잠시 후 다시 시도해주세요.")
+
+    # --- EVENT ---
+    # 상세 ID가 없거나 목록·월간 인기 조회에 반환할 행사가 없을 때 사용한다.
+    EVENT_NOT_FOUND = (404, "행사를 찾을 수 없습니다.")
+
+    # --- TOUR API ---
+    # 연결/HTTP/API 실패는 요청 실패로, 응답 구조/페이지 오류는 응답 오류로 묶는다.
+    # 세부 원인은 BusinessException.extra의 reason에 기록한다.
+    TOUR_API_KEY_MISSING = (500, "TOURAPI_KEY가 설정되지 않았습니다.")
+    TOUR_API_REQUEST_FAILED = (502, "TourAPI 요청에 실패했습니다.")
+    TOUR_API_INVALID_RESPONSE = (502, "TourAPI 응답이 올바르지 않습니다.")
+    TOUR_FESTIVAL_INVALID_PERIOD = (400, "축제 조회 기간이 올바르지 않습니다.")
+
+    # --- TOUR SYNC ---
+    # 필드별 형식/범위/길이/분류 오류는 하나로 묶고 extra에 필드와 원인을 담는다.
+    TOUR_SYNC_INVALID_DATA = (400, "축제 데이터가 올바르지 않습니다.")
+    TOUR_SYNC_REQUIRED_FIELD = (400, "필수값이 비어 있습니다.")
+    TOUR_SYNC_ID_MISMATCH = (400, "요청한 콘텐츠 ID와 응답이 다릅니다.")
+    TOUR_SYNC_CONTENT_NOT_FOUND = (404, "목록을 먼저 저장해야 합니다.")
+    TOUR_SYNC_CONTENT_CHANGED = (409, "상세 수집 중 행사 정보가 삭제되었습니다.")
+    TOUR_SYNC_DB_CONFLICT = (409, "DB 저장 중 무결성 충돌이 발생했습니다.")
+    TOUR_SYNC_SEED_MISSING = (500, "카테고리·시도·태그 기준 데이터가 없습니다.")
+    # 전체 수집은 계속 진행했지만 report.failures가 남은 경우. 이때는 마지막
+    # 성공 시각을 갱신하지 않고, 실패한 content ID와 원래 오류 코드를 로그에 남긴다.
+    TOUR_SYNC_INCOMPLETE = (500, "축제 데이터를 모두 갱신하지 못했습니다.")
+    # 예약 스레드에서 DB 상태 조회·저장 등 예상 못한 예외가 발생한 경우.
+    # 상세 traceback은 로그에만 남기고 다음 주기에 다시 시도한다.
+    TOUR_SYNC_SCHEDULE_FAILED = (500, "정기 축제 갱신 중 오류가 발생했습니다.")
 
     # --- AUTH ---
     # 로그인 자체가 안 됐거나 인증 수단이 아예 없는 등, 원인을 세분화하지 않은 일반 인증 실패.

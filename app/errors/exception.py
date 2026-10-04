@@ -16,7 +16,7 @@ class BusinessException(Exception):
     사용 예:
         raise BusinessException(ErrorCode.AUTH_TOKEN_EXPIRED)
         raise BusinessException(ErrorCode.AUTH_TOKEN_EXPIRED, "세션이 만료되었습니다")
-        raise BusinessException(ErrorCode.COMMON_INVALID_INPUT, extra={"fields": {"email": "형식이 올바르지 않습니다"}})
+        raise BusinessException(ErrorCode.COMMON_INVALID_INPUT, extra={"errors": {"email": ["형식이 올바르지 않습니다"]}})
     """
 
     def __init__(

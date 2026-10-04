@@ -1,50 +1,82 @@
-# 리뷰(review) API의 비즈니스 로직을 정의한다.
-#
-# [서비스의 책임]
-#   API에서 전달받은 데이터를 바탕으로
-#   리뷰 생성/조회/수정/삭제 및 작성자 권한 확인을 처리한다.
-#
-# API 계층에서는 요청 데이터 검증과 응답 변환만 담당하고,
-# 실제 DB 조회 및 변경과 리뷰 관련 비즈니스 로직은
-# 이 서비스 계층에서 담당한다.
-#
-# [예외 처리]
-#   서비스에서 발생하는 비즈니스 예외는 BusinessException으로 발생시킨다.
-#   전역 예외 처리기(app/__init__.py)가 해당 예외를 받아
-#   ErrorCode에 정의된 상태 코드와 메시지로 공통 응답을 반환한다.
-#
-#   - 리뷰가 존재하지 않는 경우
-#       → REVIEW_NOT_FOUND (404)
-#
-#   - 리뷰 작성자가 아닌 사용자가 수정/삭제하는 경우
-#       → REVIEW_FORBIDDEN (403)
-#
-# [현재 인증 방식]
-#   JWT 인증이 아직 연결되지 않아 user_id를 서비스에 직접 전달받는다.
-#   JWT 인증이 연결되면 API에서 JWT를 통해 현재 사용자의 user_id를 가져와
-#   서비스에 전달하는 방식으로 변경한다.
-
 from app.extensions import db
 from app.models.review import Review
+from app.models.user import User
 from app.errors import BusinessException, ErrorCode
+from sqlalchemy import func
+
+
+# 리뷰 API의 비즈니스 로직을 담당하는 서비스 모듈이다.
+#
+# [서비스의 책임]
+# API 계층(routes.py)에서 전달받은 검증된 데이터를 바탕으로
+# 리뷰의 생성, 조회, 수정, 삭제 및 평점 집계를 처리한다.
+#
+# [API 계층과 서비스 계층의 역할]
+#
+# - API 계층
+#   · JWT Access Token 인증
+#   · 현재 로그인한 사용자의 user_id 확인
+#   · 요청 데이터 검증(Schema)
+#   · 서비스 호출
+#   · 응답 데이터 변환
+#
+# - 서비스 계층
+#   · DB 조회 및 변경
+#   · 리뷰 관련 비즈니스 로직 처리
+#   · 리뷰 작성자 권한 확인
+#   · 평균 평점 및 리뷰 개수 계산
+#
+# JWT 자체는 서비스 계층에서 처리하지 않는다.
+# API 계층에서 JWT의 identity를 통해 현재 사용자의 user_id를 가져온 뒤
+# 필요한 서비스 함수에 전달한다.
+#
+# [예외 처리]
+# 서비스에서 발생하는 비즈니스 예외는 BusinessException으로 발생시킨다.
+# 전역 예외 처리기가 해당 예외를 처리하여
+# ErrorCode에 정의된 상태 코드와 메시지를 공통 응답 형식으로 반환한다.
+#
+# 주요 비즈니스 예외:
+#
+# - REVIEW_NOT_FOUND (404)
+#   → 요청한 리뷰가 존재하지 않는 경우
+#
+# - REVIEW_FORBIDDEN (403)
+#   → 현재 로그인한 사용자가 해당 리뷰의 작성자가 아닌 경우
+#
+# [리뷰 작성자 권한 확인]
+# 리뷰 수정 및 삭제 시
+# JWT에서 전달받은 현재 사용자의 user_id와
+# 리뷰에 저장된 user_id를 비교한다.
+#
+# 두 ID가 일치하는 경우에만 수정 또는 삭제를 허용한다.
 
 
 def create_review(data):
     """새로운 리뷰를 생성한다.
 
-    전달받은 요청 데이터를 Review 객체로 생성하고
-    DB에 저장한 뒤 생성된 리뷰를 반환한다.
-
-    Args:
-        data: 리뷰 생성에 필요한 검증된 요청 데이터
-
-    Returns:
-        생성된 Review 객체
+    routes.py에서 JWT로 확인한 user_id와
+    Schema 검증을 완료한 리뷰 데이터를 전달받아
+    Review 객체를 생성하고 DB에 저장한다.
     """
+    # 리뷰 작성자의 존재 여부를 확인한다.
+    user = User.query.get(data["user_id"])
 
-    # 요청 데이터로 Review 객체를 생성한다.
-    # 요청 데이터는 API 계층의 ReviewCreateSchema에서
-    # 필수값과 평점 범위 등을 먼저 검증한다.
+    # 존재하지 않는 사용자라면 리뷰를 생성하지 않고 예외를 발생시킨다.
+    if user is None:
+        raise BusinessException(
+            ErrorCode.USER_NOT_FOUND
+        )
+
+    # TODO: TourContent 모델 생성 후 실제 존재 여부 검증 연결
+    # from app.models.tour_content import TourContent
+    # tour_content = TourContent.query.get(data["tour_content_id"])
+    #
+    # if tour_content is None:
+    #     raise BusinessException(
+    #         ErrorCode.TOUR_CONTENT_NOT_FOUND
+    #     )
+
+    # 전달받은 데이터로 Review 객체를 생성한다.
     review = Review(
         user_id=data["user_id"],
         tour_content_id=data["tour_content_id"],
@@ -52,48 +84,41 @@ def create_review(data):
         content=data["content"],
     )
 
-    # 생성한 리뷰를 DB 세션에 추가하고 저장한다.
+    # 새로운 리뷰를 DB 세션에 추가한다.
     db.session.add(review)
+
+    # 변경사항을 DB에 반영한다.
     db.session.commit()
 
     return review
 
 
 def get_reviews_by_tour_content(tour_content_id):
-    """특정 관광 콘텐츠에 작성된 리뷰 목록을 조회한다.
+    """특정 관광 콘텐츠의 리뷰 목록을 조회한다.
 
-    Args:
-        tour_content_id: 리뷰를 조회할 관광 콘텐츠 ID
-
-    Returns:
-        해당 관광 콘텐츠에 작성된 Review 객체 목록
+    관광 콘텐츠 ID를 기준으로 리뷰를 조회하고
+    최근 수정된 리뷰가 먼저 나오도록 정렬한다.
     """
 
-    # 전달받은 관광 콘텐츠 ID와 일치하는 리뷰를 조회한다.
+    # 관광 콘텐츠 ID에 해당하는 리뷰를 조회한다.
     reviews = Review.query.filter_by(
         tour_content_id=tour_content_id
+    ).order_by(
+        Review.updated_at.desc(),
+        Review.created_at.desc(),
     ).all()
 
     return reviews
 
 
 def get_my_reviews(user_id):
-    """특정 사용자가 작성한 리뷰 목록을 조회한다.
+    """현재 사용자가 작성한 리뷰 목록을 조회한다.
 
-    현재는 JWT 인증이 연결되지 않아 API에서 전달받은
-    user_id를 기준으로 리뷰를 조회한다.
-
-    JWT 인증 연결 후에는 JWT에서 현재 사용자의 ID를 가져와
-    이 서비스에 전달하게 된다.
-
-    Args:
-        user_id: 리뷰 작성자의 사용자 ID
-
-    Returns:
-        해당 사용자가 작성한 Review 객체 목록
+    JWT에서 확인한 user_id를 기준으로
+    해당 사용자가 작성한 리뷰를 조회한다.
     """
 
-    # 전달받은 사용자 ID와 일치하는 리뷰를 조회한다.
+    # 현재 사용자가 작성한 리뷰를 조회한다.
     reviews = Review.query.filter_by(
         user_id=user_id
     ).all()
@@ -101,83 +126,107 @@ def get_my_reviews(user_id):
     return reviews
 
 
-def update_review(review_id, user_id, data):
-    """리뷰를 수정한다.
+def get_rating_info(tour_content_id):
+    """특정 관광 콘텐츠의 평균 평점과 리뷰 개수를 조회한다.
 
-    리뷰가 존재하는지 확인하고,
-    리뷰 작성자 본인인지 확인한 후 전달받은 필드만 수정한다.
+    AVG를 사용하여 평균 평점을 계산하고
+    COUNT를 사용하여 전체 리뷰 개수를 계산한다.
 
-    Args:
-        review_id: 수정할 리뷰 ID
-        user_id: 현재 사용자의 ID
-        data: 검증된 리뷰 수정 데이터
-
-    Raises:
-        BusinessException:
-            리뷰가 존재하지 않는 경우 REVIEW_NOT_FOUND
-            리뷰 작성자가 아닌 경우 REVIEW_FORBIDDEN
-
-    Returns:
-        수정된 Review 객체
+    리뷰가 없는 경우 평균 평점은 0으로 반환한다.
+    평균 평점은 소수점 첫째 자리까지 반환한다.
     """
 
-    # 수정하려는 리뷰가 존재하는지 확인한다.
+    # 평균 평점과 리뷰 개수를 한 번에 조회한다.
+    result = db.session.query(
+        func.avg(Review.rating),
+        func.count(Review.id)
+    ).filter(
+        Review.tour_content_id == tour_content_id
+    ).first()
+
+    # 조회 결과에서 평균 평점과 리뷰 개수를 가져온다.
+    average_rating = result[0]
+    review_count = result[1]
+
+    # 리뷰가 없는 경우 평균 평점을 0으로 반환한다.
+    if average_rating is None:
+        average_rating = 0
+    else:
+        # Decimal 값을 float으로 변환하고 소수점 첫째 자리까지 반올림한다.
+        average_rating = round(
+            float(average_rating),
+            1
+        )
+
+    return {
+        "average_rating": average_rating,
+        "review_count": review_count,
+    }
+
+
+def update_review(review_id, user_id, data):
+    """본인이 작성한 리뷰를 수정한다.
+
+    리뷰 존재 여부와 작성자 여부를 확인한 후
+    전달된 평점 또는 리뷰 내용만 수정한다.
+    """
+
+    # 리뷰 ID로 리뷰를 조회한다.
     review = Review.query.get(review_id)
 
+    # 리뷰가 존재하지 않으면 예외를 발생시킨다.
     if review is None:
-        raise BusinessException(ErrorCode.REVIEW_NOT_FOUND)
+        raise BusinessException(
+            ErrorCode.REVIEW_NOT_FOUND
+        )
 
-    # 리뷰 작성자 본인인지 확인한다.
-    # 다른 사용자가 다른 사람의 리뷰를 수정하지 못하도록 한다.
+    # 현재 사용자가 리뷰 작성자인지 확인한다.
     if review.user_id != user_id:
-        raise BusinessException(ErrorCode.REVIEW_FORBIDDEN)
+        raise BusinessException(
+            ErrorCode.REVIEW_FORBIDDEN
+        )
 
-    # 전달받은 필드만 수정한다.
-    # 따라서 rating만 보내거나 content만 보내는 부분 수정이 가능하다.
+    # 평점이 전달된 경우 평점을 수정한다.
     if "rating" in data:
         review.rating = data["rating"]
 
+    # 리뷰 내용이 전달된 경우 내용을 수정한다.
     if "content" in data:
         review.content = data["content"]
 
-    # 수정된 내용을 DB에 반영한다.
+    # 변경사항을 DB에 반영한다.
+    # TimestampMixin의 onupdate에 의해 updated_at도 갱신된다.
     db.session.commit()
 
     return review
 
 
 def delete_review(review_id, user_id):
-    """리뷰를 삭제한다.
+    """본인이 작성한 리뷰를 삭제한다.
 
-    리뷰가 존재하는지 확인하고,
-    리뷰 작성자 본인인지 확인한 후 해당 리뷰를 삭제한다.
-
-    Args:
-        review_id: 삭제할 리뷰 ID
-        user_id: 현재 사용자의 ID
-
-    Raises:
-        BusinessException:
-            리뷰가 존재하지 않는 경우 REVIEW_NOT_FOUND
-            리뷰 작성자가 아닌 경우 REVIEW_FORBIDDEN
-
-    Returns:
-        삭제된 Review 객체
+    리뷰 존재 여부와 작성자 여부를 확인한 후
+    해당 리뷰를 DB에서 삭제한다.
     """
 
-    # 삭제하려는 리뷰가 존재하는지 확인한다.
+    # 리뷰 ID로 리뷰를 조회한다.
     review = Review.query.get(review_id)
 
+    # 리뷰가 존재하지 않으면 예외를 발생시킨다.
     if review is None:
-        raise BusinessException(ErrorCode.REVIEW_NOT_FOUND)
+        raise BusinessException(
+            ErrorCode.REVIEW_NOT_FOUND
+        )
 
-    # 리뷰 작성자 본인인지 확인한다.
-    # 다른 사용자가 다른 사람의 리뷰를 삭제하지 못하도록 한다.
+    # 현재 사용자가 리뷰 작성자인지 확인한다.
     if review.user_id != user_id:
-        raise BusinessException(ErrorCode.REVIEW_FORBIDDEN)
+        raise BusinessException(
+            ErrorCode.REVIEW_FORBIDDEN
+        )
 
-    # 리뷰를 DB에서 삭제한다.
+    # 리뷰를 DB 세션에서 삭제한다.
     db.session.delete(review)
+
+    # 변경사항을 DB에 반영한다.
     db.session.commit()
 
     return review

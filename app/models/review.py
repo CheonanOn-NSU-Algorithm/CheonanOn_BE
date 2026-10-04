@@ -49,11 +49,17 @@ class Review(TimestampMixin, db.Model):
     )
 
     # 리뷰가 작성된 행사 ID
-    tour_content_id = db.Column(
+    #
+    # Event 테이블의 id를 참조한다.
+    event_id = db.Column(
         db.Integer,
+        db.ForeignKey("events.id"),
         nullable=False,
         index=True,
     )
+
+    # 리뷰가 작성된 행사
+    event = db.relationship("Event")
 
     # 리뷰 별점
     #

@@ -90,8 +90,8 @@ def validate_rating(value):
 # routes.py에서 Service로 전달한다.
 class ReviewCreateSchema(Schema):
 
-    # 리뷰가 작성될 관광 콘텐츠의 ID
-    tour_content_id = fields.Integer(
+    # 리뷰가 작성될 행사의 ID
+    event_id = fields.Integer(
         required=True
     )
 
@@ -186,8 +186,8 @@ class ReviewResponseSchema(Schema):
     # 리뷰 작성자 ID
     user_id = fields.Integer()
 
-    # 관광 콘텐츠 ID
-    tour_content_id = fields.Integer()
+    # 행사 ID
+    event_id = fields.Integer()
 
     # 리뷰 평점
     #

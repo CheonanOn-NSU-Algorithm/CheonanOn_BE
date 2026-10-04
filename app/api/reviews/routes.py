@@ -9,7 +9,7 @@ from app.schemas.review import (
 )
 from app.services.review_service import (
     create_review,
-    get_reviews_by_tour_content,
+    get_reviews_by_event,
     get_my_reviews,
     get_rating_info,
     update_review,
@@ -47,8 +47,8 @@ from . import review_bp
 # - create_review()
 #   → 새로운 리뷰를 생성한다.
 #
-# - get_reviews_by_tour_content()
-#   → 특정 관광 콘텐츠의 리뷰 목록을 조회한다.
+# - get_reviews_by_event()
+#   → 특정 행사의 리뷰 목록을 조회한다.
 #
 # - get_my_reviews()
 #   → 현재 사용자가 작성한 리뷰 목록을 조회한다.
@@ -83,9 +83,9 @@ def create():
     Authorization: Bearer <access_token>
 
     {
-        "tour_content_id": 1,
+        "event_id": 1,
         "rating": 4.5,
-        "content": "관광지가 정말 좋았습니다."
+        "content": "축제가 정말 좋았습니다."
     }
     """
 
@@ -111,24 +111,22 @@ def create():
     ), 201
 
 
-# 특정 관광 콘텐츠의 리뷰 목록 조회
+# 특정 행사의 리뷰 목록 조회
 @review_bp.route(
-    "/tour-content/<int:tour_content_id>",
+    "/event/<int:event_id>",
     methods=["GET"]
 )
 @jwt_required()
-def get_by_tour_content(tour_content_id):
-    """특정 관광 콘텐츠의 리뷰 목록을 조회한다.
+def get_by_event(event_id):
+    """특정 행사의 리뷰 목록을 조회한다.
 
     호출 예시:
-    GET /api/reviews/tour-content/1
+    GET /api/reviews/event/1
     Authorization: Bearer <access_token>
     """
 
-    # 특정 관광 콘텐츠의 리뷰 목록을 조회한다.
-    result = get_reviews_by_tour_content(
-        tour_content_id
-    )
+    # 특정 행사의 리뷰 목록을 조회한다.
+    result = get_reviews_by_event(event_id)
 
     # 조회된 리뷰 목록을 응답 형식으로 변환하여 반환한다.
     return jsonify(
@@ -138,29 +136,27 @@ def get_by_tour_content(tour_content_id):
     ), 200
 
 
-# 특정 관광 콘텐츠의 평균 평점 및 리뷰 개수 조회
+# 특정 행사의 평균 평점 및 리뷰 개수 조회
 @review_bp.route(
-    "/tour-content/<int:tour_content_id>/rating",
+    "/event/<int:event_id>/rating",
     methods=["GET"]
 )
 @jwt_required()
-def get_average_rating_by_tour_content(tour_content_id):
-    """특정 관광 콘텐츠의 평균 평점과 리뷰 개수를 조회한다.
+def get_average_rating_by_event(event_id):
+    """특정 행사의 평균 평점과 리뷰 개수를 조회한다.
 
     호출 예시:
-    GET /api/reviews/tour-content/1/rating
+    GET /api/reviews/event/1/rating
     Authorization: Bearer <access_token>
     """
 
     # 평균 평점과 리뷰 개수를 조회한다.
-    rating_info = get_rating_info(
-        tour_content_id
-    )
+    rating_info = get_rating_info(event_id)
 
     # 조회 결과를 공통 응답 형식으로 반환한다.
     return jsonify(
         CommonResponse.success({
-            "tour_content_id": tour_content_id,
+            "event_id": event_id,
             "average_rating": rating_info["average_rating"],
             "review_count": rating_info["review_count"],
         })

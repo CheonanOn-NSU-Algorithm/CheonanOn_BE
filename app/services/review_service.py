@@ -1,4 +1,5 @@
 from app.extensions import db
+from app.models.tour_content import Event
 from app.models.review import Review
 from app.models.user import User
 from app.errors import BusinessException, ErrorCode
@@ -67,19 +68,18 @@ def create_review(data):
             ErrorCode.USER_NOT_FOUND
         )
 
-    # TODO: TourContent 모델 생성 후 실제 존재 여부 검증 연결
-    # from app.models.tour_content import TourContent
-    # tour_content = TourContent.query.get(data["tour_content_id"])
-    #
-    # if tour_content is None:
-    #     raise BusinessException(
-    #         ErrorCode.TOUR_CONTENT_NOT_FOUND
-    #     )
+    # 리뷰를 작성할 행사가 존재하는지 확인한다.
+    event = Event.query.get(data["event_id"])
+
+    if event is None:
+        raise BusinessException(
+            ErrorCode.EVENT_NOT_FOUND
+        )
 
     # 전달받은 데이터로 Review 객체를 생성한다.
     review = Review(
         user_id=data["user_id"],
-        tour_content_id=data["tour_content_id"],
+        event_id=data["event_id"],
         rating=data["rating"],
         content=data["content"],
     )
@@ -93,16 +93,16 @@ def create_review(data):
     return review
 
 
-def get_reviews_by_tour_content(tour_content_id):
-    """특정 관광 콘텐츠의 리뷰 목록을 조회한다.
+def get_reviews_by_event(event_id):
+    """특정 행사의 리뷰 목록을 조회한다.
 
-    관광 콘텐츠 ID를 기준으로 리뷰를 조회하고
+    행사 ID를 기준으로 리뷰를 조회하고
     최근 수정된 리뷰가 먼저 나오도록 정렬한다.
     """
 
     # 관광 콘텐츠 ID에 해당하는 리뷰를 조회한다.
     reviews = Review.query.filter_by(
-        tour_content_id=tour_content_id
+        event_id=event_id
     ).order_by(
         Review.updated_at.desc(),
         Review.created_at.desc(),
@@ -126,8 +126,8 @@ def get_my_reviews(user_id):
     return reviews
 
 
-def get_rating_info(tour_content_id):
-    """특정 관광 콘텐츠의 평균 평점과 리뷰 개수를 조회한다.
+def get_rating_info(event_id):
+    """특정 행사의 평균 평점과 리뷰 개수를 조회한다.
 
     AVG를 사용하여 평균 평점을 계산하고
     COUNT를 사용하여 전체 리뷰 개수를 계산한다.
@@ -141,7 +141,7 @@ def get_rating_info(tour_content_id):
         func.avg(Review.rating),
         func.count(Review.id)
     ).filter(
-        Review.tour_content_id == tour_content_id
+        Review.event_id == event_id
     ).first()
 
     # 조회 결과에서 평균 평점과 리뷰 개수를 가져온다.

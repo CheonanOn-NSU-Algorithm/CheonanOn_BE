@@ -52,31 +52,23 @@ from sqlalchemy import func
 # 두 ID가 일치하는 경우에만 수정 또는 삭제를 허용한다.
 
 
+# 새로운 리뷰를 생성한다.
 def create_review(data):
-    """새로운 리뷰를 생성한다.
-
-    routes.py에서 JWT로 확인한 user_id와
-    Schema 검증을 완료한 리뷰 데이터를 전달받아
-    Review 객체를 생성하고 DB에 저장한다.
-    """
     # 리뷰 작성자의 존재 여부를 확인한다.
     user = User.query.get(data["user_id"])
 
-    # 존재하지 않는 사용자라면 리뷰를 생성하지 않고 예외를 발생시킨다.
+    # 존재하지 않는 사용자라면 예외를 발생시킨다.
     if user is None:
-        raise BusinessException(
-            ErrorCode.USER_NOT_FOUND
-        )
+        raise BusinessException(ErrorCode.USER_NOT_FOUND)
 
-    # 리뷰를 작성할 행사가 존재하는지 확인한다.
+    # 리뷰가 작성될 행사의 존재 여부를 확인한다.
     event = Event.query.get(data["event_id"])
 
+    # 존재하지 않는 행사라면 예외를 발생시킨다.
     if event is None:
-        raise BusinessException(
-            ErrorCode.EVENT_NOT_FOUND
-        )
+        raise BusinessException(ErrorCode.EVENT_NOT_FOUND)
 
-    # 전달받은 데이터로 Review 객체를 생성한다.
+    # 전달받은 데이터로 리뷰 객체를 생성한다.
     review = Review(
         user_id=data["user_id"],
         event_id=data["event_id"],
@@ -84,26 +76,17 @@ def create_review(data):
         content=data["content"],
     )
 
-    # 새로운 리뷰를 DB 세션에 추가한다.
+    # 리뷰를 DB에 추가하고 저장한다.
     db.session.add(review)
-
-    # 변경사항을 DB에 반영한다.
     db.session.commit()
 
     return review
 
 
+# 특정 행사의 리뷰 목록을 조회한다.
 def get_reviews_by_event(event_id):
-    """특정 행사의 리뷰 목록을 조회한다.
-
-    행사 ID를 기준으로 리뷰를 조회하고
-    최근 수정된 리뷰가 먼저 나오도록 정렬한다.
-    """
-
-    # 관광 콘텐츠 ID에 해당하는 리뷰를 조회한다.
-    reviews = Review.query.filter_by(
-        event_id=event_id
-    ).order_by(
+    # 행사 ID를 기준으로 리뷰를 조회하고 최근 수정순으로 정렬한다.
+    reviews = Review.query.filter_by(event_id=event_id).order_by(
         Review.updated_at.desc(),
         Review.created_at.desc(),
     ).all()
@@ -111,52 +94,32 @@ def get_reviews_by_event(event_id):
     return reviews
 
 
+# 현재 사용자가 작성한 리뷰 목록을 조회한다.
 def get_my_reviews(user_id):
-    """현재 사용자가 작성한 리뷰 목록을 조회한다.
-
-    JWT에서 확인한 user_id를 기준으로
-    해당 사용자가 작성한 리뷰를 조회한다.
-    """
-
-    # 현재 사용자가 작성한 리뷰를 조회한다.
-    reviews = Review.query.filter_by(
-        user_id=user_id
-    ).all()
+    # 사용자 ID를 기준으로 작성한 리뷰를 조회한다.
+    reviews = Review.query.filter_by(user_id=user_id).all()
 
     return reviews
 
 
+# 특정 행사의 평균 평점과 리뷰 개수를 조회한다.
 def get_rating_info(event_id):
-    """특정 행사의 평균 평점과 리뷰 개수를 조회한다.
-
-    AVG를 사용하여 평균 평점을 계산하고
-    COUNT를 사용하여 전체 리뷰 개수를 계산한다.
-
-    리뷰가 없는 경우 평균 평점은 0으로 반환한다.
-    평균 평점은 소수점 첫째 자리까지 반환한다.
-    """
-
-    # 평균 평점과 리뷰 개수를 한 번에 조회한다.
+    # 행사 ID를 기준으로 평균 평점과 리뷰 개수를 조회한다.
     result = db.session.query(
         func.avg(Review.rating),
         func.count(Review.id)
-    ).filter(
-        Review.event_id == event_id
-    ).first()
+    ).filter(Review.event_id == event_id).first()
 
     # 조회 결과에서 평균 평점과 리뷰 개수를 가져온다.
     average_rating = result[0]
     review_count = result[1]
 
-    # 리뷰가 없는 경우 평균 평점을 0으로 반환한다.
+    # 리뷰가 없으면 평균 평점을 0으로 반환한다.
     if average_rating is None:
         average_rating = 0
     else:
-        # Decimal 값을 float으로 변환하고 소수점 첫째 자리까지 반올림한다.
-        average_rating = round(
-            float(average_rating),
-            1
-        )
+        # 평균 평점을 소수점 첫째 자리까지 반올림한다.
+        average_rating = round(float(average_rating), 1)
 
     return {
         "average_rating": average_rating,
@@ -164,69 +127,48 @@ def get_rating_info(event_id):
     }
 
 
+# 본인이 작성한 리뷰를 수정한다.
 def update_review(review_id, user_id, data):
-    """본인이 작성한 리뷰를 수정한다.
-
-    리뷰 존재 여부와 작성자 여부를 확인한 후
-    전달된 평점 또는 리뷰 내용만 수정한다.
-    """
-
     # 리뷰 ID로 리뷰를 조회한다.
     review = Review.query.get(review_id)
 
     # 리뷰가 존재하지 않으면 예외를 발생시킨다.
     if review is None:
-        raise BusinessException(
-            ErrorCode.REVIEW_NOT_FOUND
-        )
+        raise BusinessException(ErrorCode.REVIEW_NOT_FOUND)
 
     # 현재 사용자가 리뷰 작성자인지 확인한다.
     if review.user_id != user_id:
-        raise BusinessException(
-            ErrorCode.REVIEW_FORBIDDEN
-        )
+        raise BusinessException(ErrorCode.REVIEW_FORBIDDEN)
 
-    # 평점이 전달된 경우 평점을 수정한다.
+    # 전달된 평점이 있으면 수정한다.
     if "rating" in data:
         review.rating = data["rating"]
 
-    # 리뷰 내용이 전달된 경우 내용을 수정한다.
+    # 전달된 리뷰 내용이 있으면 수정한다.
     if "content" in data:
         review.content = data["content"]
 
     # 변경사항을 DB에 반영한다.
-    # TimestampMixin의 onupdate에 의해 updated_at도 갱신된다.
     db.session.commit()
 
     return review
 
 
+# 본인이 작성한 리뷰를 삭제한다.
 def delete_review(review_id, user_id):
-    """본인이 작성한 리뷰를 삭제한다.
-
-    리뷰 존재 여부와 작성자 여부를 확인한 후
-    해당 리뷰를 DB에서 삭제한다.
-    """
-
     # 리뷰 ID로 리뷰를 조회한다.
     review = Review.query.get(review_id)
 
     # 리뷰가 존재하지 않으면 예외를 발생시킨다.
     if review is None:
-        raise BusinessException(
-            ErrorCode.REVIEW_NOT_FOUND
-        )
+        raise BusinessException(ErrorCode.REVIEW_NOT_FOUND)
 
     # 현재 사용자가 리뷰 작성자인지 확인한다.
     if review.user_id != user_id:
-        raise BusinessException(
-            ErrorCode.REVIEW_FORBIDDEN
-        )
+        raise BusinessException(ErrorCode.REVIEW_FORBIDDEN)
 
-    # 리뷰를 DB 세션에서 삭제한다.
+    # 리뷰를 DB에서 삭제한다.
     db.session.delete(review)
-
-    # 변경사항을 DB에 반영한다.
     db.session.commit()
 
     return review

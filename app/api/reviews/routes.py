@@ -72,38 +72,23 @@ from . import review_bp
 # Authorization: Bearer <access_token>
 
 
-# 리뷰 생성
+# 리뷰 생성 요청을 처리하고 생성된 리뷰를 반환한다.
 @review_bp.route("", methods=["POST"])
 @jwt_required()
 def create():
-    """새로운 리뷰를 생성한다.
-
-    호출 예시:
-    POST /api/reviews
-    Authorization: Bearer <access_token>
-
-    {
-        "event_id": 1,
-        "rating": 4.5,
-        "content": "축제가 정말 좋았습니다."
-    }
-    """
-
     # JWT에서 현재 로그인한 사용자의 ID를 가져온다.
     user_id = int(get_jwt_identity())
 
-    # 요청 데이터를 검증한다.
-    data = ReviewCreateSchema().load(
-        request.get_json(silent=True) or {}
-    )
+    # 요청 데이터를 Schema로 검증하고 변환한다.
+    data = ReviewCreateSchema().load(request.get_json(silent=True) or {})
 
-    # JWT에서 확인한 user_id를 리뷰 데이터에 추가한다.
+    # JWT에서 가져온 사용자 ID를 리뷰 데이터에 추가한다.
     data["user_id"] = user_id
 
     # 리뷰 생성 Service를 호출한다.
     result = create_review(data)
 
-    # 생성된 리뷰를 응답 형식으로 변환하여 반환한다.
+    # 생성된 리뷰를 공통 응답 형식으로 반환한다.
     return jsonify(
         CommonResponse.success(
             ReviewResponseSchema().dump(result)
@@ -111,24 +96,14 @@ def create():
     ), 201
 
 
-# 특정 행사의 리뷰 목록 조회
-@review_bp.route(
-    "/event/<int:event_id>",
-    methods=["GET"]
-)
+# 특정 행사의 리뷰 목록 조회 요청을 처리한다.
+@review_bp.route("/event/<int:event_id>", methods=["GET"])
 @jwt_required()
 def get_by_event(event_id):
-    """특정 행사의 리뷰 목록을 조회한다.
-
-    호출 예시:
-    GET /api/reviews/event/1
-    Authorization: Bearer <access_token>
-    """
-
-    # 특정 행사의 리뷰 목록을 조회한다.
+    # 행사 ID를 기준으로 리뷰 목록을 조회한다.
     result = get_reviews_by_event(event_id)
 
-    # 조회된 리뷰 목록을 응답 형식으로 변환하여 반환한다.
+    # 조회된 리뷰 목록을 공통 응답 형식으로 반환한다.
     return jsonify(
         CommonResponse.success(
             ReviewResponseSchema(many=True).dump(result)
@@ -136,24 +111,14 @@ def get_by_event(event_id):
     ), 200
 
 
-# 특정 행사의 평균 평점 및 리뷰 개수 조회
-@review_bp.route(
-    "/event/<int:event_id>/rating",
-    methods=["GET"]
-)
+# 특정 행사의 평균 평점과 리뷰 개수 조회 요청을 처리한다.
+@review_bp.route("/event/<int:event_id>/rating", methods=["GET"])
 @jwt_required()
 def get_average_rating_by_event(event_id):
-    """특정 행사의 평균 평점과 리뷰 개수를 조회한다.
-
-    호출 예시:
-    GET /api/reviews/event/1/rating
-    Authorization: Bearer <access_token>
-    """
-
-    # 평균 평점과 리뷰 개수를 조회한다.
+    # 행사 ID를 기준으로 평균 평점과 리뷰 개수를 조회한다.
     rating_info = get_rating_info(event_id)
 
-    # 조회 결과를 공통 응답 형식으로 반환한다.
+    # 평점 정보를 공통 응답 형식으로 반환한다.
     return jsonify(
         CommonResponse.success({
             "event_id": event_id,
@@ -163,24 +128,17 @@ def get_average_rating_by_event(event_id):
     ), 200
 
 
-# 내가 작성한 리뷰 목록 조회
+# 현재 로그인한 사용자의 리뷰 목록 조회 요청을 처리한다.
 @review_bp.route("/my", methods=["GET"])
 @jwt_required()
 def get_my():
-    """현재 로그인한 사용자가 작성한 리뷰 목록을 조회한다.
-
-    호출 예시:
-    GET /api/reviews/my
-    Authorization: Bearer <access_token>
-    """
-
     # JWT에서 현재 로그인한 사용자의 ID를 가져온다.
     user_id = int(get_jwt_identity())
 
     # 현재 사용자가 작성한 리뷰를 조회한다.
     result = get_my_reviews(user_id)
 
-    # 조회된 리뷰 목록을 응답 형식으로 변환하여 반환한다.
+    # 조회된 리뷰 목록을 공통 응답 형식으로 반환한다.
     return jsonify(
         CommonResponse.success(
             ReviewResponseSchema(many=True).dump(result)
@@ -188,38 +146,20 @@ def get_my():
     ), 200
 
 
-# 리뷰 수정
+# 리뷰 수정 요청을 처리하고 수정된 리뷰를 반환한다.
 @review_bp.route("/<int:review_id>", methods=["PUT"])
 @jwt_required()
 def update(review_id):
-    """본인이 작성한 리뷰를 수정한다.
-
-    호출 예시:
-    PUT /api/reviews/1
-    Authorization: Bearer <access_token>
-
-    {
-        "rating": 4.5,
-        "content": "수정된 리뷰 내용입니다."
-    }
-    """
-
     # JWT에서 현재 로그인한 사용자의 ID를 가져온다.
     user_id = int(get_jwt_identity())
 
-    # 요청 데이터를 검증한다.
-    data = ReviewUpdateSchema().load(
-        request.get_json(silent=True) or {}
-    )
+    # 요청 데이터를 Schema로 검증하고 변환한다.
+    data = ReviewUpdateSchema().load(request.get_json(silent=True) or {})
 
     # 리뷰 수정 Service를 호출한다.
-    result = update_review(
-        review_id,
-        user_id,
-        data
-    )
+    result = update_review(review_id, user_id, data)
 
-    # 수정된 리뷰를 응답 형식으로 변환하여 반환한다.
+    # 수정된 리뷰를 공통 응답 형식으로 반환한다.
     return jsonify(
         CommonResponse.success(
             ReviewResponseSchema().dump(result)
@@ -227,27 +167,17 @@ def update(review_id):
     ), 200
 
 
-# 리뷰 삭제
+# 리뷰 삭제 요청을 처리하고 삭제된 리뷰를 반환한다.
 @review_bp.route("/<int:review_id>", methods=["DELETE"])
 @jwt_required()
 def delete(review_id):
-    """본인이 작성한 리뷰를 삭제한다.
-
-    호출 예시:
-    DELETE /api/reviews/1
-    Authorization: Bearer <access_token>
-    """
-
     # JWT에서 현재 로그인한 사용자의 ID를 가져온다.
     user_id = int(get_jwt_identity())
 
     # 리뷰 삭제 Service를 호출한다.
-    result = delete_review(
-        review_id,
-        user_id
-    )
+    result = delete_review(review_id, user_id)
 
-    # 삭제된 리뷰를 응답 형식으로 변환하여 반환한다.
+    # 삭제된 리뷰를 공통 응답 형식으로 반환한다.
     return jsonify(
         CommonResponse.success(
             ReviewResponseSchema().dump(result)

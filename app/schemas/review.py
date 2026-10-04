@@ -64,141 +64,68 @@ from marshmallow import (
 #
 # ReviewCreateSchema와 ReviewUpdateSchema에서
 # rating 필드의 validate 옵션으로 사용한다.
+
+# 리뷰 평점의 범위와 입력 단위를 검증한다.
 def validate_rating(value):
-    # 평점의 최소 및 최대 범위를 검사한다.
+    # 평점이 0.5 이상 5 이하인지 확인한다.
     if value < 0.5 or value > 5:
         raise ValidationError()
 
-    # 평점이 0.5점 단위인지 검사한다.
-    #
-    # 0.5 단위의 숫자는 2를 곱하면 정수가 된다.
-    #
-    # 예:
-    #   4.5 × 2 = 9   → 정상
-    #   4.0 × 2 = 8   → 정상
-    #   4.3 × 2 = 8.6 → 오류
+    # 평점이 0.5 단위인지 확인한다.
     if value * 2 != int(value * 2):
         raise ValidationError()
 
 
-# 리뷰 생성 요청 Schema
-#
-# 리뷰 생성에 필요한 필드와 입력 조건을 정의한다.
-#
-# user_id는 요청으로 받지 않는다.
-# 로그인한 사용자의 ID는 JWT에서 가져와
-# routes.py에서 Service로 전달한다.
+# 리뷰 생성 요청에 필요한 필드와 검증 조건을 정의한다.
 class ReviewCreateSchema(Schema):
 
-    # 리뷰가 작성될 행사의 ID
-    event_id = fields.Integer(
-        required=True
-    )
+    # 리뷰가 작성될 행사 ID를 받는다.
+    event_id = fields.Integer(required=True)
 
-    # 리뷰 평점
-    #
-    # 0.5 ~ 5.0 범위에서
-    # 0.5 단위로 입력할 수 있다.
-    rating = fields.Float(
-        required=True,
-        validate=validate_rating,
-    )
+    # 0.5 ~ 5.0 범위의 평점을 받는다.
+    rating = fields.Float(required=True, validate=validate_rating)
 
-    # 리뷰 내용
-    #
-    # 반드시 입력해야 하며
-    # 최소 1글자 이상이어야 한다.
-    content = fields.String(
-        required=True,
-        validate=validate.Length(
-            min=1
-        )
-    )
+    # 최소 1글자 이상의 리뷰 내용을 받는다.
+    content = fields.String(required=True, validate=validate.Length(min=1))
 
 
-# 리뷰 수정 요청 Schema
-#
-# rating과 content를 선택적으로 수정할 수 있다.
-#
-# 예:
-# {
-#     "rating": 4.5
-# }
-#
-# {
-#     "content": "수정된 리뷰입니다."
-# }
-#
-# {
-#     "rating": 4.5,
-#     "content": "수정된 리뷰입니다."
-# }
+# 리뷰 수정 요청에 필요한 필드와 검증 조건을 정의한다.
 class ReviewUpdateSchema(Schema):
 
-    # 수정할 평점
-    #
-    # 전달된 경우에만
-    # 0.5 ~ 5.0 범위와 0.5 단위 여부를 검사한다.
-    rating = fields.Float(
-        required=False,
-        validate=validate_rating,
-    )
+    # 전달된 경우 평점의 범위와 단위를 검증한다.
+    rating = fields.Float(required=False, validate=validate_rating)
 
-    # 수정할 리뷰 내용
-    #
-    # 전달된 경우 최소 1글자 이상이어야 한다.
-    content = fields.String(
-        required=False,
-        validate=validate.Length(
-            min=1
-        )
-    )
+    # 전달된 경우 리뷰 내용이 비어 있지 않은지 검증한다.
+    content = fields.String(required=False, validate=validate.Length(min=1))
 
-    # 수정할 데이터가 최소 하나 이상 전달되었는지 확인한다.
-    #
-    # rating과 content가 모두 required=False이므로
-    # 빈 객체 {}도 기본적으로 Schema를 통과할 수 있다.
-    #
-    # 따라서 수정할 내용이 없는 요청을 별도로 검사한다.
+    # 수정할 데이터가 하나 이상 전달되었는지 확인한다.
     @validates_schema
     def validate_update(self, data, **kwargs):
-
-        # 수정할 필드가 하나도 전달되지 않은 경우
-        # ValidationError를 발생시킨다.
+        # 수정할 데이터가 없으면 오류를 발생시킨다.
         if not data:
             raise ValidationError()
 
 
-# 리뷰 응답 Schema
-#
-# DB에서 조회한 Review 객체를
-# API 응답 JSON 형식으로 변환할 때 사용한다.
-#
-# ReviewResponseSchema().dump(review)
-# 또는
-# ReviewResponseSchema(many=True).dump(reviews)
-# 형태로 사용한다.
+# Review 객체의 API 응답 형식을 정의한다.
 class ReviewResponseSchema(Schema):
 
-    # 리뷰 ID
+    # 리뷰의 고유 ID를 반환한다.
     id = fields.Integer()
 
-    # 리뷰 작성자 ID
+    # 리뷰 작성자의 ID를 반환한다.
     user_id = fields.Integer()
 
-    # 행사 ID
+    # 리뷰가 작성된 행사 ID를 반환한다.
     event_id = fields.Integer()
 
-    # 리뷰 평점
-    #
-    # 0.5 단위의 값을 반환하기 위해 Float를 사용한다.
+    # 리뷰 평점을 반환한다.
     rating = fields.Float()
 
-    # 리뷰 내용
+    # 리뷰 내용을 반환한다.
     content = fields.String()
 
-    # 리뷰 생성 시간
+    # 리뷰 생성 시간을 반환한다.
     created_at = fields.DateTime()
 
-    # 리뷰 수정 시간
+    # 리뷰 수정 시간을 반환한다.
     updated_at = fields.DateTime()

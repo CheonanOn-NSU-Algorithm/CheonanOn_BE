@@ -1,4 +1,4 @@
-from flask import request, jsonify
+from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from app.common_response import CommonResponse
@@ -15,7 +15,40 @@ from app.services.review_service import (
     update_review,
     delete_review,
 )
-from . import review_bp
+
+# Review API에서 사용하는 Blueprint를 생성한다.
+#
+# Blueprint는 여러 개의 API Route를 하나의 그룹으로 묶어 관리하기 위한 기능이다.
+# Review 관련 API를 review_bp에 등록하면,
+# 나중에 상위 API Blueprint에 한 번에 등록할 수 있다.
+#
+# url_prefix="/reviews"를 지정했기 때문에
+# routes.py에서 작성하는 Route 앞에 "/reviews"가 자동으로 붙는다.
+#
+# 예시)
+#   @review_bp.route("", methods=["POST"])
+#   → POST /reviews
+#
+#   @review_bp.route("/my", methods=["GET"])
+#   → GET /reviews/my
+#
+# 상위 Blueprint에서 "/api"를 사용하고 있다면
+# 실제 요청 URL은 다음과 같이 된다.
+#
+#   POST /api/reviews
+#   GET  /api/reviews/my
+#
+review_bp = Blueprint("reviews", __name__, url_prefix="/reviews")
+
+# 아래 @review_bp.route 데코레이터가 review_bp에 각 Route를 등록한다.
+# app/api/reviews/__init__.py는 이 모듈에서 review_bp를 가져와 부모에 전달한다.
+# 현재 등록된 최종 경로는 다음과 같다.
+#   POST   /api/reviews
+#   GET    /api/reviews/event/<event_id>
+#   GET    /api/reviews/event/<event_id>/rating
+#   GET    /api/reviews/my
+#   PUT    /api/reviews/<review_id>
+#   DELETE /api/reviews/<review_id>
 
 
 # 리뷰 API의 HTTP 요청과 응답을 처리하는 라우트 모듈이다.

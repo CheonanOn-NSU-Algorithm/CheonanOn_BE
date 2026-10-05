@@ -35,7 +35,7 @@ def create_app():
     from app import jwt_callbacks  # noqa: F401
 
     register_error_handlers(app)  # 모든 도메인의 요청·DB·HTTP 오류를 공통 형식으로 처리
-    register_blueprints(app)      # 인증·회원·행사 API Blueprint를 등록
+    register_blueprints(app)      # 인증·회원·리뷰·행사 API Blueprint를 등록
 
     return app
 
@@ -43,7 +43,7 @@ def create_app():
 def register_blueprints(app: Flask):
     """모든 API 라우트를 앱에 등록한다.
 
-    개별 Blueprint(auth_bp, users_bp, events_bp 등)는 app/api/__init__.py의 부모 Blueprint(api_bp)에
+    개별 Blueprint(auth_bp, users_bp, review_bp, events_bp 등)는 app/api/__init__.py의 부모 Blueprint(api_bp)에
     이미 묶여 있어서, 여기서는 api_bp 하나만 등록하면 된다.
     새 도메인 API를 추가할 때는 이 함수가 아니라 app/api/__init__.py를 수정한다.
     최종 URL 목록도 app/api/__init__.py 상단 주석에 정리되어 있다.

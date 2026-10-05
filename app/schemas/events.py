@@ -13,6 +13,9 @@ from marshmallow import (
     validates_schema,
 )
 
+# 행사 상세 응답에 포함되는 리뷰도 기존 리뷰 API와 같은 필드 형식으로 내보내기 위해 사용한다.
+from app.schemas.review import ReviewResponseSchema
+
 
 class QuerySchema(Schema):
     # 같은 키가 반복되면 첫 값만 남기지 않고 요청 오류로 처리한다.
@@ -181,3 +184,22 @@ class EventDetailSchema(EventCardSchema):
     contact_phone = fields.String(data_key="contactPhone", allow_none=True)
     homepage_url = fields.String(data_key="homepageUrl", allow_none=True)
     is_permanent = fields.Boolean(data_key="isPermanent")
+
+
+class EventDetailResponseSchema(Schema):
+    # GET /api/event/<id>의 data를 만든다. 행사 모델과 리뷰 목록, 평점 집계는
+    # 라우트에서 따로 조회하므로 여기서 하나의 응답 형태로 묶어 직렬화한다.
+    # 각 리뷰는 기존 리뷰 API와 같은 스키마를 써서 필드 이름과 형식을 맞춘다.
+    event = fields.Nested(EventDetailSchema)
+    reviews = fields.List(fields.Nested(ReviewResponseSchema))
+    # 내부 Python 키는 snake_case이지만 API 응답에서는 camelCase로 내보낸다.
+    review_count = fields.Integer(data_key="reviewCount")
+    average_rating = fields.Float(data_key="averageRating")
+
+    @post_dump
+    def flatten_event(self, data, **kwargs):
+        # Nested 직렬화 결과는 {"event": {...}, "reviews": [...]} 형태다.
+        # 기존 상세 응답의 title, startDate 등을 event 안에 넣으면 프론트의
+        # 접근 경로가 바뀌므로 event만 풀고 리뷰 관련 필드를 옆에 추가한다.
+        event = data.pop("event")
+        return {**event, **data}

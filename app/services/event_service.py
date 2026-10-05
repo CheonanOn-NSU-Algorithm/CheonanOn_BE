@@ -90,8 +90,9 @@ class EventService:
     def list_events(query):
         # 요청에 있는 필터만 SQL 조건에 추가한다. 태그 검색은 EXISTS를 사용해
         # 태그가 여러 개 맞아도 한 행사가 중복되거나 totalCount가 부풀지 않게 한다.
-        # 수집이 실패하거나 자정 직후 아직 정리가 안 된 지난 행사가
-        # 화면에 나타나지 않도록 DB 정리와 별개로 종료일을 검사한다.
+        # 지난 행사는 리뷰와 함께 DB에 보관하되 목록 화면에서는 제외한다.
+        # 오늘 종료하는 행사는 오늘까지 표시한다. 다른 검색 조건보다 먼저
+        # 이 조건을 넣어 모든 카테고리·지역·검색 목록에 동일하게 적용한다.
         conditions = [Event.end_date >= datetime.now(KST).date()]
         if query["category_id"] is not None:
             conditions.append(Event.category_id == query["category_id"])
@@ -166,9 +167,9 @@ class EventService:
             statement = (
                 select(Event)
                 .options(selectinload(Event.category), selectinload(Event.sido))
-                # 자정 이후 정기 수집이 아직 실행되지 않았어도 지난 행사는
-                # 상세에서 노출하거나 조회수에 기록하지 않는다.
-                .where(Event.id == event_id, Event.end_date >= view_date)
+                # 지난 행사는 목록에서만 제외한다. 저장된 행사 ID로 직접 들어오면
+                # 상세 정보와 연결된 리뷰를 계속 볼 수 있도록 종료일로 막지 않는다.
+                .where(Event.id == event_id)
             )
             if record_view:
                 # MySQL에서는 행사 행 잠금으로 같은 행사 집계를 순차 처리한다.

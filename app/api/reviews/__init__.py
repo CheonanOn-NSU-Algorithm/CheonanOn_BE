@@ -1,44 +1,9 @@
-from flask import Blueprint
+# 리뷰 패키지의 진입점(entrypoint).
+# 실제 Blueprint와 라우트는 routes.py에 있다. 여기서 review_bp를 다시 내보내면
+# app/api/__init__.py는 routes.py의 내부 경로를 몰라도 리뷰 API를 등록할 수 있다.
+# 이 파일을 가져오면 routes.py도 읽히므로 @review_bp.route가 붙은 라우트들도
+# Blueprint에 등록된다. 나중에 라우트 파일을 나누더라도 외부 import는 유지할 수 있다.
+from app.api.reviews.routes import review_bp
 
-
-# Review API에서 사용하는 Blueprint를 생성한다.
-#
-# Blueprint는 여러 개의 API Route를 하나의 그룹으로 묶어 관리하기 위한 기능이다.
-# Review 관련 API를 review_bp에 등록하면,
-# 나중에 상위 API Blueprint에 한 번에 등록할 수 있다.
-#
-# url_prefix="/reviews"를 지정했기 때문에
-# routes.py에서 작성하는 Route 앞에 "/reviews"가 자동으로 붙는다.
-#
-# 예시)
-#   @review_bp.route("", methods=["POST"])
-#   → POST /reviews
-#
-#   @review_bp.route("/my", methods=["GET"])
-#   → GET /reviews/my
-#
-# 상위 Blueprint에서 "/api"를 사용하고 있다면
-# 실제 요청 URL은 다음과 같이 된다.
-#
-#   POST /api/reviews
-#   GET  /api/reviews/my
-#
-review_bp = Blueprint(
-    "reviews",
-    __name__,
-    url_prefix="/reviews"
-)
-
-
-# routes.py에 작성된 Review API Route를 등록한다.
-#
-# review_bp만 생성해 놓으면 실제 Route가 등록되지 않기 때문에
-# routes.py를 import하여 아래와 같은 Route를 등록한다.
-#
-#   POST   /api/reviews
-#   GET    /api/reviews/tour-content/<tour_content_id>
-#   GET    /api/reviews/my
-#   PUT    /api/reviews/<review_id>
-#   DELETE /api/reviews/<review_id>
-#
-from . import routes
+# `from app.api.reviews import *`를 쓸 때 내보낼 이름을 제한한다.
+__all__ = ["review_bp"]

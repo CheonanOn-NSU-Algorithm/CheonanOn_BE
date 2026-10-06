@@ -124,7 +124,14 @@ class BookmarkApiTests(unittest.TestCase):
             "/api/bookmarks", json={"event_id": 99999}, headers=self.auth_headers
         )
         self.assertEqual(missing_event.status_code, 404)
-        self.assertEqual(missing_event.get_json()["code"], "EVENT_NOT_FOUND")
+        self.assertEqual(
+            missing_event.get_json(),
+            {
+                "success": False,
+                "code": "EVENT_NOT_FOUND",
+                "message": "행사를 찾을 수 없습니다.",
+            },
+        )
 
         missing_bookmark = self.client.delete(
             f"/api/bookmarks/{self.event.id}", headers=self.auth_headers
@@ -135,10 +142,35 @@ class BookmarkApiTests(unittest.TestCase):
             "isBookmarked": False,
         })
 
+    def test_validation_error_uses_response_schema_and_keeps_field_details(self):
+        """검증 오류도 공통 응답 스키마를 거치고 필드별 오류를 유지한다."""
+        response = self.client.post(
+            "/api/bookmarks", json={}, headers=self.auth_headers
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.get_json(),
+            {
+                "success": False,
+                "code": "COMMON_INVALID_INPUT",
+                "message": "요청 값이 올바르지 않습니다.",
+                "errors": {"eventId": ["eventId 값을 하나만 입력해주세요."]},
+            },
+        )
+
     def test_bookmark_endpoints_require_authentication(self):
-        """인증 토큰이 없는 요청을 거부하는지 확인한다."""
+        """인증 토큰이 없는 요청을 거부한다."""
         response = self.client.get("/api/bookmarks")
         self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response.get_json(),
+            {
+                "success": False,
+                "code": "AUTH_UNAUTHORIZED",
+                "message": "인증에 실패했습니다.",
+            },
+        )
 
 
 if __name__ == "__main__":

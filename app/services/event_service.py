@@ -16,6 +16,19 @@ from app.models.tour_content import Category, Event, EventDailyView, Sido, Tag
 KST = timezone(timedelta(hours=9))
 
 
+def _contains_keyword(value):
+    # q와 세부 검색어를 모두 SQL의 '문자열 포함' 검색 패턴으로 바꾼다.
+    # 앞뒤 공백만 제거하며, 공백만 보냈으면 검색 조건을 만들지 않는다.
+    text = (value or "").strip()
+    if not text:
+        return None
+    # LIKE에서 %는 여러 글자, _는 한 글자를 뜻한다. 사용자가 입력한 기호는
+    # 검색 명령이 아닌 실제 글자로 찾도록 \\를 앞에 붙인다. \\ 자체도 이스케이프한다.
+    # 앞뒤의 %만 부분 일치 검색을 위해 코드에서 붙인다.
+    escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
 class EventService:
     @staticmethod
     def list_categories():
@@ -105,15 +118,10 @@ class EventService:
         if query["end_date"] is not None:
             conditions.append(Event.start_date <= query["end_date"])
 
-        search_text = (query["q"] or "").strip()
-        if search_text:
-            # SQL LIKE의 와일드카드 입력은 일반 글자로 검색되도록 이스케이프한다.
-            escaped = (
-                search_text.replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_")
-            )
-            keyword = f"%{escaped}%"
+        # q는 기존 통합 검색이다. ilike()로 대소문자를 구분하지 않고,
+        # 제목·장소·연결된 태그 중 한 곳에만 검색어가 있어도 결과에 넣는다.
+        keyword = _contains_keyword(query["q"])
+        if keyword:
             conditions.append(
                 or_(
                     Event.title.ilike(keyword, escape="\\"),
@@ -121,6 +129,23 @@ class EventService:
                     Event.tags.any(Tag.name.ilike(keyword, escape="\\")),
                 )
             )
+
+        # 세부 검색은 각자 지정한 필드만 검사한다. 조건 목록은 아래 SQL의
+        # where(*conditions)에서 AND로 묶여 q·카테고리·지역 등과 함께 적용된다.
+        title_keyword = _contains_keyword(query["title"])
+        if title_keyword:
+            # 제목에만 포함된 문자열을 찾는다. 장소·태그 일치는 여기서 제외한다.
+            conditions.append(Event.title.ilike(title_keyword, escape="\\"))
+        venue_keyword = _contains_keyword(query["venue"])
+        if venue_keyword:
+            # 장소명(events.venue_name)에만 포함된 문자열을 찾는다.
+            conditions.append(Event.venue_name.ilike(venue_keyword, escape="\\"))
+        tag_keyword = _contains_keyword(query["tag"])
+        if tag_keyword:
+            # 소개글에서 추출되어 event_tags로 연결된 태그 이름만 검사한다.
+            # 태그 연결 테이블을 직접 JOIN하면 한 행사에 여러 태그가 맞을 때
+            # 목록과 totalCount가 중복된다. EXISTS로 연결 여부만 확인한다.
+            conditions.append(Event.tags.any(Tag.name.ilike(tag_keyword, escape="\\")))
 
         # 페이지네이션 전 전체 건수를 세어 프론트가 페이지 수를 계산하게 한다.
         total_count = db.session.scalar(

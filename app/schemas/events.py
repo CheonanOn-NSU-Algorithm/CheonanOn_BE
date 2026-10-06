@@ -62,8 +62,20 @@ class SidoOptionSchema(Schema):
 
 
 class EventListQuerySchema(QuerySchema):
-    # 검색어는 선택값이다. 공백 제거와 검색 조건 조합은 서비스에서 처리한다.
+    # 기존 q는 행사명·장소명·태그명을 한 번에 찾는다. 한 곳이라도 일치하면 조회된다.
+    # 예: ?q=푸드트럭은 제목에 없어도 푸드트럭 태그가 붙은 행사를 찾는다.
     q = fields.String(load_default=None, validate=validate.Length(max=100))
+
+    # 세부 검색어는 각각 지정한 필드에서만 찾는다. 셋 다 선택값이며,
+    # q 또는 다른 필터와 함께 보내면 모든 조건을 만족하는 행사만 반환한다.
+    # 예: ?title=감악산&tag=푸드트럭은 두 조건이 모두 맞는 행사만 찾는다.
+    # 빈 값의 처리, 앞뒤 공백 제거, 부분 일치는 EventService.list_events()에서 한다.
+    # 너무 긴 검색어는 DB 조회 전에 막도록 각 필드를 100자 이하로 제한한다.
+    title = fields.String(load_default=None, validate=validate.Length(max=100))
+    # venue는 TourAPI의 행사 장소명(eventplace)이 저장된 events.venue_name을 찾는다.
+    venue = fields.String(load_default=None, validate=validate.Length(max=100))
+    # tag는 행사 소개글에서 뽑아 연결한 tags.name을 찾는다. 소개글 전체 검색은 아니다.
+    tag = fields.String(load_default=None, validate=validate.Length(max=100))
     category_id = fields.Integer(
         load_default=None,
         validate=validate.Range(min=1, max=2_147_483_647),

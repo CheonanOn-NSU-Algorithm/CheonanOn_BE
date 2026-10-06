@@ -44,7 +44,9 @@ def list_sidos():
 
 @events_bp.get("")
 def list_events():
-    # 한국 시간 기준 이미 끝난 행사는 제외하고, 나머지 조건을 함께 적용한다.
+    # 한국 시간 기준 이미 끝난 행사는 제외한다. q 통합 검색과 title·venue·tag
+    # 세부 검색을 포함한 나머지 조건은 스키마에서 검증하고 서비스에서 적용한다.
+    # 모두 같은 GET /api/event 경로를 사용하며, 응답의 행사 카드 형식도 동일하다.
     query = EventListQuerySchema().load(request.args)
     result = EventService.list_events(query)
     data = EventListResponseSchema().dump(result)

@@ -17,6 +17,8 @@
 #   /api  +  /auth   +  /logout   →  POST /api/auth/logout    로그아웃
 #   /api  +  /users  +  /me       →  GET  /api/users/me       내 정보 조회
 #   /api  +  /reviews +  /        →  POST /api/reviews        리뷰 작성
+#   /api  +  /bookmarks + /       →  GET/POST /api/bookmarks  내 북마크 목록 조회/추가
+#   /api  +  /bookmarks + /<id>   →  DELETE /api/bookmarks/<id> 북마크 해제
 #   ※ 그래서 자식 Blueprint(auth_bp, users_bp, review_bp)의 url_prefix에는 "/api"를 다시 쓰면 안 된다.
 #   /api  +  /event + /       →  GET  /api/event         오늘도 열리거나 앞으로 열릴 행사
 #   /api  +  /event + /<id>   →  GET  /api/event/<id>    행사 상세
@@ -39,7 +41,7 @@ from app.api.reviews import review_bp  # 리뷰 관련 API (/reviews/...)
 
 
 from app.api.events.routes import events_bp  # 행사 조회 API (/event/...)
-from app.api.bookmarks import bookmark_bp  # 북마크 API (/bookmarks/...)
+from app.api.bookmarks import bookmark_bp  # 내 북마크 목록 조회·추가·해제 API (/bookmarks/...)
 
 # "api"는 Blueprint 이름. url_for()로 URL을 만들 때 "api.auth.kakao_login" 처럼
 # 부모 이름.자식 이름.함수명 형태의 endpoint 이름에 쓰인다.
@@ -53,4 +55,5 @@ api_bp.register_blueprint(users_bp)
 api_bp.register_blueprint(review_bp)
 
 api_bp.register_blueprint(events_bp, url_prefix="/event")
+# 자식 prefix("/bookmarks")를 유지해 최종 경로가 /api/bookmarks가 된다.
 api_bp.register_blueprint(bookmark_bp)

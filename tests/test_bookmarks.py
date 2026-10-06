@@ -16,19 +16,24 @@ from app.models.user import User
 
 
 class BookmarkApiTests(unittest.TestCase):
+    """실제 MySQL 설정과 분리한 메모리 DB에서 북마크 API를 검증한다."""
+
     @classmethod
     def setUpClass(cls):
+        """테스트 전체에서 앱과 테스트 클라이언트를 한 번만 만든다."""
         cls.app = create_app()
         cls.app.config.update(TESTING=True)
         cls.client = cls.app.test_client()
 
     @classmethod
     def tearDownClass(cls):
+        """테스트 종료 후 DB 세션과 연결을 정리한다."""
         with cls.app.app_context():
             db.session.remove()
             db.engine.dispose()
 
     def setUp(self):
+        """각 테스트 전에 사용자 두 명과 행사 한 건으로 독립된 DB를 준비한다."""
         self.app_context = self.app.app_context()
         self.app_context.push()
         db.drop_all()
@@ -57,11 +62,13 @@ class BookmarkApiTests(unittest.TestCase):
         self.auth_headers = {"Authorization": f"Bearer {self.token}"}
 
     def tearDown(self):
+        """테스트 데이터를 지우고 앱 컨텍스트를 종료한다."""
         db.session.remove()
         db.drop_all()
         self.app_context.pop()
 
     def test_create_list_and_delete_bookmark(self):
+        """추가 응답, 목록 조회, 삭제까지 기본 흐름을 확인한다."""
         created = self.client.post(
             "/api/bookmarks",
             json={"eventId": self.event.id},
@@ -86,6 +93,7 @@ class BookmarkApiTests(unittest.TestCase):
         self.assertEqual(Bookmark.query.count(), 0)
 
     def test_duplicate_bookmark_is_idempotent(self):
+        """입력 표기가 달라도 재요청 시 중복 행이 생기지 않는지 확인한다."""
         first = self.client.post(
             "/api/bookmarks", json={"eventId": self.event.id}, headers=self.auth_headers
         )
@@ -99,6 +107,7 @@ class BookmarkApiTests(unittest.TestCase):
         self.assertEqual(Bookmark.query.count(), 1)
 
     def test_users_only_see_their_own_bookmarks(self):
+        """다른 사용자의 북마크가 목록에 노출되지 않는지 확인한다."""
         self.client.post(
             "/api/bookmarks", json={"eventId": self.event.id}, headers=self.auth_headers
         )
@@ -110,6 +119,7 @@ class BookmarkApiTests(unittest.TestCase):
         self.assertEqual(response.get_json()["data"], {"totalCount": 0, "events": []})
 
     def test_missing_event_is_not_found_and_delete_is_idempotent(self):
+        """없는 행사는 404이고 없는 북마크를 지워도 성공인지 확인한다."""
         missing_event = self.client.post(
             "/api/bookmarks", json={"event_id": 99999}, headers=self.auth_headers
         )
@@ -126,6 +136,7 @@ class BookmarkApiTests(unittest.TestCase):
         })
 
     def test_bookmark_endpoints_require_authentication(self):
+        """인증 토큰이 없는 요청을 거부하는지 확인한다."""
         response = self.client.get("/api/bookmarks")
         self.assertEqual(response.status_code, 401)
 

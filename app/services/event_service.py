@@ -16,6 +16,19 @@ from app.models.tour_content import Category, Event, EventDailyView, Sido, Tag
 KST = timezone(timedelta(hours=9))
 
 
+def _contains_keyword(value):
+    # q와 세부 검색어를 모두 SQL의 '문자열 포함' 검색 패턴으로 바꾼다.
+    # 앞뒤 공백만 제거하며, 공백만 보냈으면 검색 조건을 만들지 않는다.
+    text = (value or "").strip()
+    if not text:
+        return None
+    # LIKE에서 %는 여러 글자, _는 한 글자를 뜻한다. 사용자가 입력한 기호는
+    # 검색 명령이 아닌 실제 글자로 찾도록 \\를 앞에 붙인다. \\ 자체도 이스케이프한다.
+    # 앞뒤의 %만 부분 일치 검색을 위해 코드에서 붙인다.
+    escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
 class EventService:
     @staticmethod
     def list_categories():
@@ -90,8 +103,9 @@ class EventService:
     def list_events(query):
         # 요청에 있는 필터만 SQL 조건에 추가한다. 태그 검색은 EXISTS를 사용해
         # 태그가 여러 개 맞아도 한 행사가 중복되거나 totalCount가 부풀지 않게 한다.
-        # 수집이 실패하거나 자정 직후 아직 정리가 안 된 지난 행사가
-        # 화면에 나타나지 않도록 DB 정리와 별개로 종료일을 검사한다.
+        # 지난 행사는 리뷰와 함께 DB에 보관하되 목록 화면에서는 제외한다.
+        # 오늘 종료하는 행사는 오늘까지 표시한다. 다른 검색 조건보다 먼저
+        # 이 조건을 넣어 모든 카테고리·지역·검색 목록에 동일하게 적용한다.
         conditions = [Event.end_date >= datetime.now(KST).date()]
         if query["category_id"] is not None:
             conditions.append(Event.category_id == query["category_id"])
@@ -104,15 +118,10 @@ class EventService:
         if query["end_date"] is not None:
             conditions.append(Event.start_date <= query["end_date"])
 
-        search_text = (query["q"] or "").strip()
-        if search_text:
-            # SQL LIKE의 와일드카드 입력은 일반 글자로 검색되도록 이스케이프한다.
-            escaped = (
-                search_text.replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_")
-            )
-            keyword = f"%{escaped}%"
+        # q는 기존 통합 검색이다. ilike()로 대소문자를 구분하지 않고,
+        # 제목·장소·연결된 태그 중 한 곳에만 검색어가 있어도 결과에 넣는다.
+        keyword = _contains_keyword(query["q"])
+        if keyword:
             conditions.append(
                 or_(
                     Event.title.ilike(keyword, escape="\\"),
@@ -120,6 +129,23 @@ class EventService:
                     Event.tags.any(Tag.name.ilike(keyword, escape="\\")),
                 )
             )
+
+        # 세부 검색은 각자 지정한 필드만 검사한다. 조건 목록은 아래 SQL의
+        # where(*conditions)에서 AND로 묶여 q·카테고리·지역 등과 함께 적용된다.
+        title_keyword = _contains_keyword(query["title"])
+        if title_keyword:
+            # 제목에만 포함된 문자열을 찾는다. 장소·태그 일치는 여기서 제외한다.
+            conditions.append(Event.title.ilike(title_keyword, escape="\\"))
+        venue_keyword = _contains_keyword(query["venue"])
+        if venue_keyword:
+            # 장소명(events.venue_name)에만 포함된 문자열을 찾는다.
+            conditions.append(Event.venue_name.ilike(venue_keyword, escape="\\"))
+        tag_keyword = _contains_keyword(query["tag"])
+        if tag_keyword:
+            # 소개글에서 추출되어 event_tags로 연결된 태그 이름만 검사한다.
+            # 태그 연결 테이블을 직접 JOIN하면 한 행사에 여러 태그가 맞을 때
+            # 목록과 totalCount가 중복된다. EXISTS로 연결 여부만 확인한다.
+            conditions.append(Event.tags.any(Tag.name.ilike(tag_keyword, escape="\\")))
 
         # 페이지네이션 전 전체 건수를 세어 프론트가 페이지 수를 계산하게 한다.
         total_count = db.session.scalar(
@@ -166,9 +192,9 @@ class EventService:
             statement = (
                 select(Event)
                 .options(selectinload(Event.category), selectinload(Event.sido))
-                # 자정 이후 정기 수집이 아직 실행되지 않았어도 지난 행사는
-                # 상세에서 노출하거나 조회수에 기록하지 않는다.
-                .where(Event.id == event_id, Event.end_date >= view_date)
+                # 지난 행사는 목록에서만 제외한다. 저장된 행사 ID로 직접 들어오면
+                # 상세 정보와 연결된 리뷰를 계속 볼 수 있도록 종료일로 막지 않는다.
+                .where(Event.id == event_id)
             )
             if record_view:
                 # MySQL에서는 행사 행 잠금으로 같은 행사 집계를 순차 처리한다.

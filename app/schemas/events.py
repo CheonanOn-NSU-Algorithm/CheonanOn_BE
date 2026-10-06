@@ -13,6 +13,9 @@ from marshmallow import (
     validates_schema,
 )
 
+# 행사 상세 응답에 포함되는 리뷰도 기존 리뷰 API와 같은 필드 형식으로 내보내기 위해 사용한다.
+from app.schemas.review import ReviewResponseSchema
+
 
 class QuerySchema(Schema):
     # 같은 키가 반복되면 첫 값만 남기지 않고 요청 오류로 처리한다.
@@ -59,8 +62,20 @@ class SidoOptionSchema(Schema):
 
 
 class EventListQuerySchema(QuerySchema):
-    # 검색어는 선택값이다. 공백 제거와 검색 조건 조합은 서비스에서 처리한다.
+    # 기존 q는 행사명·장소명·태그명을 한 번에 찾는다. 한 곳이라도 일치하면 조회된다.
+    # 예: ?q=푸드트럭은 제목에 없어도 푸드트럭 태그가 붙은 행사를 찾는다.
     q = fields.String(load_default=None, validate=validate.Length(max=100))
+
+    # 세부 검색어는 각각 지정한 필드에서만 찾는다. 셋 다 선택값이며,
+    # q 또는 다른 필터와 함께 보내면 모든 조건을 만족하는 행사만 반환한다.
+    # 예: ?title=감악산&tag=푸드트럭은 두 조건이 모두 맞는 행사만 찾는다.
+    # 빈 값의 처리, 앞뒤 공백 제거, 부분 일치는 EventService.list_events()에서 한다.
+    # 너무 긴 검색어는 DB 조회 전에 막도록 각 필드를 100자 이하로 제한한다.
+    title = fields.String(load_default=None, validate=validate.Length(max=100))
+    # venue는 TourAPI의 행사 장소명(eventplace)이 저장된 events.venue_name을 찾는다.
+    venue = fields.String(load_default=None, validate=validate.Length(max=100))
+    # tag는 행사 소개글에서 뽑아 연결한 tags.name을 찾는다. 소개글 전체 검색은 아니다.
+    tag = fields.String(load_default=None, validate=validate.Length(max=100))
     category_id = fields.Integer(
         load_default=None,
         validate=validate.Range(min=1, max=2_147_483_647),
@@ -181,3 +196,22 @@ class EventDetailSchema(EventCardSchema):
     contact_phone = fields.String(data_key="contactPhone", allow_none=True)
     homepage_url = fields.String(data_key="homepageUrl", allow_none=True)
     is_permanent = fields.Boolean(data_key="isPermanent")
+
+
+class EventDetailResponseSchema(Schema):
+    # GET /api/event/<id>의 data를 만든다. 행사 모델과 리뷰 목록, 평점 집계는
+    # 라우트에서 따로 조회하므로 여기서 하나의 응답 형태로 묶어 직렬화한다.
+    # 각 리뷰는 기존 리뷰 API와 같은 스키마를 써서 필드 이름과 형식을 맞춘다.
+    event = fields.Nested(EventDetailSchema)
+    reviews = fields.List(fields.Nested(ReviewResponseSchema))
+    # 내부 Python 키는 snake_case이지만 API 응답에서는 camelCase로 내보낸다.
+    review_count = fields.Integer(data_key="reviewCount")
+    average_rating = fields.Float(data_key="averageRating")
+
+    @post_dump
+    def flatten_event(self, data, **kwargs):
+        # Nested 직렬화 결과는 {"event": {...}, "reviews": [...]} 형태다.
+        # 기존 상세 응답의 title, startDate 등을 event 안에 넣으면 프론트의
+        # 접근 경로가 바뀌므로 event만 풀고 리뷰 관련 필드를 옆에 추가한다.
+        event = data.pop("event")
+        return {**event, **data}

@@ -38,3 +38,19 @@ class BookmarkListResponseSchema(Schema):
 
     totalCount = fields.Integer(required=True)
     events = fields.List(fields.Nested(BookmarkEventSchema), required=True)
+
+
+class BookmarkActionApiResponseSchema(Schema):
+    """북마크 추가·삭제 API의 공통 success/message/data 응답."""
+
+    success = fields.Boolean(required=True)
+    message = fields.String(required=True)
+    data = fields.Nested(BookmarkResponseSchema, required=True)
+
+
+class BookmarkListApiResponseSchema(Schema):
+    """북마크 목록 API의 공통 success/message/data 응답."""
+
+    success = fields.Boolean(required=True)
+    message = fields.String(required=True)
+    data = fields.Nested(BookmarkListResponseSchema, required=True)

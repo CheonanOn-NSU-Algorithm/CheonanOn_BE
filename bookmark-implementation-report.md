@@ -3,11 +3,11 @@
 작성일: 2026-10-06
 저장소: Merge-NSU-Algorithm/Merge_BE
 기준 브랜치: develop
-작업 PR: https://github.com/Merge-NSU-Algorithm/Merge_BE/pull/19
+작업 브랜치: feature/bookmark-yeonjoon
 
 ## 요약
 
-행사 북마크 기능, 데이터베이스 마이그레이션, API 계약 정리와 테스트를 완료했다. 이 PR에는 보고서와 기능 코드가 함께 포함되며, develop에 병합되기 전 검토를 받는다.
+행사 북마크 기능, 데이터베이스 마이그레이션, API 계약 정리와 테스트를 완료했다. 이 브랜치에는 보고서와 기능 코드가 함께 포함되며, develop에 병합되기 전 검토를 받는다.
 
 ## 구현 내용
 
@@ -59,3 +59,4 @@
 - app/services/bookmark_service.py
 - migrations/versions/a91c2d7e4b10_add_bookmarks_table.py
 - tests/test_bookmarks.py
+- bookmark-implementation-report.md

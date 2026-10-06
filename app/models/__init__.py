@@ -2,7 +2,7 @@
 # 각 모델 모듈(user.py, token_blocklist.py 등)에 흩어진 모델 클래스를
 # 여기 한 곳에 모아 import해두면, 다른 코드에서는
 #   from app.models import User, TokenBlocklist
-# 처럼 짧게 가져올 수 있다.
+# 처럼 짧게 가져다 쓸 수 있다.
 #
 # 또한 Flask-Migrate(Alembic)가 마이그레이션 파일을 자동 생성(autogenerate)하려면
 # db.Model을 상속한 모델 클래스들이 파이썬 프로세스에 "import되어" 있어야 하는데,

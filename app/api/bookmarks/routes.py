@@ -1,4 +1,4 @@
-from flask import jsonify, request
+from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from app.common_response import CommonResponse
@@ -8,7 +8,9 @@ from app.schemas.bookmark import (
     BookmarkListApiResponseSchema,
 )
 from app.services.bookmark_service import add_bookmark, get_my_bookmarks, remove_bookmark
-from .blueprint import bookmark_bp
+
+# 기존 API 라우트와 같은 방식으로 routes.py에서 Blueprint를 정의한다.
+bookmark_bp = Blueprint("bookmarks", __name__, url_prefix="/bookmarks")
 
 
 @bookmark_bp.route("", methods=["POST"])
@@ -43,7 +45,5 @@ def delete(event_id):
     """로그인한 사용자의 특정 행사 북마크를 해제한다."""
     user_id = int(get_jwt_identity())
     result = remove_bookmark(user_id, event_id)
-    response = BookmarkActionApiResponseSchema().dump(
-        CommonResponse.success(result)
-    )
+    response = BookmarkActionApiResponseSchema().dump(CommonResponse.success(result))
     return jsonify(response), 200

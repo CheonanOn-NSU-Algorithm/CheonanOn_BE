@@ -6,7 +6,6 @@ from app.config import Config  # JWT_SECRET_KEY, DB URI 등 환경설정 값을 
 
 from app.errors import BusinessException, ErrorCode  # 공통 비지니스 예외 클래스
 from app.common_response import CommonResponse  # 공통 응답 반환
-from app.schemas.common_response import ErrorResponseSchema
 from werkzeug.exceptions import HTTPException, MethodNotAllowed
 
 from app.extensions import db, migrate, jwt  # DB/마이그레이션/JWT 확장 객체 (app에 바인딩할 예정)
@@ -84,8 +83,7 @@ def register_error_handlers(app: Flask):
     def handle_business_exception(e: BusinessException):
         # e.status_code / e.error_code 둘 다 BusinessException이 아니라 e.error_code(ErrorCode)에서
         # 정해진 값이다 (app/errors/exception.py, app/errors/codes.py 참고).
-        body = CommonResponse.error(e.error_code, e.message, e.extra)
-        return jsonify(ErrorResponseSchema().dump(body)), e.status_code
+        return jsonify(CommonResponse.error(e.error_code, e.message, e.extra)), e.status_code
 
     @app.errorhandler(ValidationError)
     def handle_validation_error(e: ValidationError):
@@ -94,20 +92,15 @@ def register_error_handlers(app: Flask):
         # e.messages에 필드별 에러가 dict로 들어 있어서 extra로 그대로 내려준다.
         # 예: {"success": false, "code": "COMMON_INVALID_INPUT", "message": "요청 값이 올바르지 않습니다.",
         #      "errors": {"code": ["Missing data for required field."]}}
-        body = CommonResponse.error(
-            ErrorCode.COMMON_INVALID_INPUT, extra={"errors": e.messages}
-        )
-        return (
-            jsonify(ErrorResponseSchema().dump(body)),
-            ErrorCode.COMMON_INVALID_INPUT.status_code,
-        )
+        return jsonify(
+            CommonResponse.error(ErrorCode.COMMON_INVALID_INPUT, extra={"errors": e.messages})
+        ), ErrorCode.COMMON_INVALID_INPUT.status_code
 
     @app.errorhandler(HTTPException)
     def handle_http_exception(e: HTTPException):
         # 404, 405 같은 라우팅 단계 오류. ErrorCode가 없어서 CommonResponse.error()로는
         # 못 만들고, HTTPException이 이미 들고 있는 code/name/description으로 직접 구성한다.
-        body = {"success": False, "code": e.name, "message": e.description}
-        response = jsonify(ErrorResponseSchema().dump(body))
+        response = jsonify({"success": False, "code": e.name, "message": e.description})
         # 405는 RFC상 Allow 헤더가 필수다. Werkzeug가 만들어 주던 헤더가 직접 응답을 만들면서
         # 사라지므로, 허용 메서드 목록(e.valid_methods)으로 다시 채운다.
         if isinstance(e, MethodNotAllowed) and e.valid_methods:
@@ -130,8 +123,7 @@ def register_error_handlers(app: Flask):
         )
         # SQL·접속 정보·원본 오류는 로그에서 확인하고 응답에는 공통 메시지만 보낸다.
         app.logger.exception(e)
-        body = CommonResponse.error(error_code)
-        return jsonify(ErrorResponseSchema().dump(body)), error_code.status_code
+        return jsonify(CommonResponse.error(error_code)), error_code.status_code
 
     @app.errorhandler(Exception)
     def handle_unexpected_exception(e: Exception):
@@ -143,5 +135,4 @@ def register_error_handlers(app: Flask):
 
         # 실제 원인(e)은 로그로만 남기고, 응답에는 노출하지 않는다.
         # 클라이언트에는 항상 동일한 일반 메시지(COMMON_INTERNAL_ERROR)만 내려준다.
-        body = CommonResponse.error(ErrorCode.COMMON_INTERNAL_ERROR)
-        return jsonify(ErrorResponseSchema().dump(body)), 500
+        return jsonify(CommonResponse.error(ErrorCode.COMMON_INTERNAL_ERROR)), 500

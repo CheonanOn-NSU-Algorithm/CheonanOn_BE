@@ -19,6 +19,8 @@
 #   /api  +  /reviews + (없음)    →  POST /api/reviews        리뷰 작성
 #   /api  +  /event  + (없음)    →  GET  /api/event          진행 중·예정 행사 목록
 #   /api  +  /event  + /<id>     →  GET  /api/event/<id>     행사 상세
+#   /api  +  /bookmarks + (없음) →  GET/POST /api/bookmarks  내 북마크 목록 조회/추가
+#   /api  +  /bookmarks + /<id>  →  DELETE /api/bookmarks/<id> 북마크 해제
 #   자식 Blueprint의 url_prefix에는 "/api"를 다시 쓰지 않는다.
 #   중복 지정하면 /api/api/auth/... 같은 주소가 된다.
 #
@@ -35,6 +37,7 @@ from app.api.auth import auth_bp       # 인증 관련 API (/auth/...)
 from app.api.users import users_bp     # 유저 관련 API (/users/...)
 from app.api.reviews import review_bp  # 리뷰 관련 API (/reviews/...)
 from app.api.events import events_bp   # 행사 조회 API (/event/...)
+from app.api.bookmarks import bookmark_bp  # 북마크 API (/bookmarks/...)
 
 # "api"는 Blueprint 이름. url_for()로 URL을 만들 때 "api.auth.kakao_login" 처럼
 # 부모 이름.자식 이름.함수명 형태의 endpoint 이름에 쓰인다.
@@ -46,4 +49,5 @@ api_bp.register_blueprint(auth_bp)
 api_bp.register_blueprint(users_bp)
 api_bp.register_blueprint(review_bp)
 api_bp.register_blueprint(events_bp)
-
+# 자식 prefix("/bookmarks")와 부모 prefix("/api")를 합쳐 최종 경로를 만든다.
+api_bp.register_blueprint(bookmark_bp)

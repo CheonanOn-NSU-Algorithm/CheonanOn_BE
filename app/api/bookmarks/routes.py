@@ -3,9 +3,9 @@ from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from app.common_response import CommonResponse
 from app.schemas.bookmark import (
-    BookmarkActionApiResponseSchema,
     BookmarkCreateSchema,
-    BookmarkListApiResponseSchema,
+    BookmarkListResponseSchema,
+    BookmarkResponseSchema,
 )
 from app.services.bookmark_service import add_bookmark, get_my_bookmarks, remove_bookmark
 
@@ -22,10 +22,10 @@ def create():
     data = BookmarkCreateSchema().load(request.get_json(silent=True) or {})
     event_id = data.get("eventId", data.get("event_id"))
     _, created = add_bookmark(user_id, event_id)
-    response = BookmarkActionApiResponseSchema().dump(
-        CommonResponse.success({"eventId": event_id, "isBookmarked": True})
+    response_data = BookmarkResponseSchema().dump(
+        {"eventId": event_id, "isBookmarked": True}
     )
-    return jsonify(response), 201 if created else 200
+    return jsonify(CommonResponse.success(response_data)), 201 if created else 200
 
 
 @bookmark_bp.route("", methods=["GET"])
@@ -35,8 +35,8 @@ def get_my():
     """로그인한 사용자 본인의 북마크 목록만 반환한다."""
     user_id = int(get_jwt_identity())
     bookmarks = get_my_bookmarks(user_id)
-    response = BookmarkListApiResponseSchema().dump(CommonResponse.success(bookmarks))
-    return jsonify(response), 200
+    response_data = BookmarkListResponseSchema().dump(bookmarks)
+    return jsonify(CommonResponse.success(response_data)), 200
 
 
 @bookmark_bp.route("/<int:event_id>", methods=["DELETE"])
@@ -45,5 +45,5 @@ def delete(event_id):
     """로그인한 사용자의 특정 행사 북마크를 해제한다."""
     user_id = int(get_jwt_identity())
     result = remove_bookmark(user_id, event_id)
-    response = BookmarkActionApiResponseSchema().dump(CommonResponse.success(result))
-    return jsonify(response), 200
+    response_data = BookmarkResponseSchema().dump(result)
+    return jsonify(CommonResponse.success(response_data)), 200

@@ -24,7 +24,6 @@ from app.extensions import jwt, db
 from app.models import TokenBlocklist
 from app.common_response import CommonResponse
 from app.errors import ErrorCode
-from app.schemas.common_response import ErrorResponseSchema
 
 
 def _error(error_code: ErrorCode):
@@ -32,8 +31,7 @@ def _error(error_code: ErrorCode):
     전역 핸들러(app/__init__.py)가 BusinessException을 응답으로 바꾸는 것과 같은 포맷이다.
     예: ({"success": false, "code": "AUTH_TOKEN_EXPIRED", "message": "토큰이 만료되었습니다."}, 401)
     """
-    body = CommonResponse.error(error_code)
-    return jsonify(ErrorResponseSchema().dump(body)), error_code.status_code
+    return jsonify(CommonResponse.error(error_code)), error_code.status_code
 
 
 @jwt.token_in_blocklist_loader
